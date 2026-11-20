@@ -1,19 +1,42 @@
 # Magazine for Pi WebUI
 
-**Experimental open-source Magazine plugin for Pi WebUI**. This is a separate implementation from [Magazine for Open WebUI](https://github.com/Nundrian/Magazine); their host APIs are not interchangeable.
+**0.1.0-pi.8-ui.3** repairs Docker Desktop workflow import using verified
+Linux-backed internal storage, preserving atomic no-overwrite publication.
+It adds actionable filesystem diagnostics and fixes a demonstrated worker-exit
+cleanup race. The ui.2 interface and all 29 core engine modules are retained.
 
-## Current source release
+Magazine runs prewritten bounded cartridges in fresh saved Pi sessions. Load a
+workflow, inspect prompts, choose exact available models/tools, prepare READY,
+then explicitly Start. Preparing, previewing and restoring work do not start
+inference. Missing models are rejected without silent substitution.
 
-The prepared source release is **`0.1.0-pi.8-ui.2`**. It adds Magazine-specific dark/light/follow-Pi themes, a clear **Load your workflow → Set up → Prepare workflow → Start workflow** sequence, previous-run viewing, cartridge summaries, and bounded read-only discovery retries.
+For result-file workflows, Magazine checks native publisher receipts, identities,
+saved-session/result hashes and declared handover pointers before committing and
+advancing. COMPLETED establishes the execution/publication contract; inspect
+actual tool outputs and deliverables for task correctness. Local acceptance
+found both a completed model run and model/provider failures, all documented.
 
-The Pi runner, handover, scheduler, recovery, token accounting and persistence modules are unchanged from `pi.8-ui.1`, apart from the service version marker. The default policy remains five attempts total and 1,800 seconds per fresh attempt.
+Current tested deployment: **Pi WebUI 0.120.0, SDK 1.5.2, Node 22.23.5,
+Python 3.11, Docker Desktop Linux containers**. Existing exact compatibility
+pairs remain in `magazine-pi/compatibility.json`; this repair's full suite used
+SDK 1.5.2. The separate Windows Pi CLI is not the target.
 
-**Compatibility:** documented host acceptance on Pi WebUI 0.120.0 / SDK 1.5.2. Independent offline checks passed, but live LLM inference and a full security audit have not been performed for this update.
+- [Installation](docs/INSTALL.md)
+- [Linux storage, verified migration and rollback](docs/LINUX-STORAGE.md)
+- [Repair and actual local-model acceptance](docs/IMPORT-REPAIR.md)
+- [Operator controls](docs/UI8-OPERATOR-GUIDE.md)
+- [Security and tool authority](docs/SECURITY.md)
+- [Tests and historical evidence](docs/TESTING.md)
 
-## Publication status
+The plugin is `magazine-pi/`. Build allowlisted ZIPs with
+`python scripts/build_release.py`. Archives exclude private config, models,
+credentials, sessions, runs and workspaces. Run tests with the documented
+PYTHONPATH and actual host SDK path. Automated providers are deterministic
+loopback fixtures, separate from real local-model acceptance.
 
-**Repository initialised; complete source import pending.** The full vetted source, deployment files, tests, original `ui.1`/`ui.2` release archives and two-version Git bundle have been prepared for import. This placeholder intentionally does not claim the plugin files are already present. Please do not clone this repository expecting an installable plugin until that import is complete.
+This repair branch contains the complete source. Earlier reports are historical;
+the import repair report records current checks. No Open WebUI service is required
+or modified. Magazine for Open WebUI is a separate implementation. MIT licensed.
 
-Never commit `.env`, private `config.json`, provider credentials, sessions, run exports, workspaces or backups. Before updating a running Pi installation, stop workers, empty the queue, and back up its persistent data and workspace.
-
-MIT-licensed; repository publication and installed-host verification are separate activities.
+Update only at confirmed idle, preserve state/config and keep rollback copies.
+After new work, removing the Linux mount would reveal stale Windows records.

@@ -1,0 +1,480 @@
+{
+  "baseline": "0.1.0-beta.5",
+  "core": {
+    "async_runner.py": "8155f53929647c4918117abad51f9e2f3a9baf67344adb3da2bf7f6fe8195371",
+    "complete.py": "07cd12c6f75bb9faafa327bd0c53350304501083631d0fa6ac8f53d2f2184e2b",
+    "document.py": "d353e80932946fc15b3f439e0c53284bdb7395ce92f2071633540bb97e1ac3fa",
+    "durability.py": "f179bab7b0ebe0061028e662cf2bf8dd21893443e7fddc76eb1aa5337c8a9c32",
+    "entrypoint.py": "973197af7c26a253b07b1ff128b851c577dec2a963f82b5712dc79e568a3d696",
+    "execute.py": "a046b6f75faca63ee6f5c2de99acbaaed8959503f52e5acf3a3ded9f4811acd8",
+    "execution_meta.py": "c64da1a2df226b00c0bf8cf1f59fe8c229821eaacabd9a69d429e6785d2623ed",
+    "orchestration.py": "1ac5dfb5da24da10f7b2cc30f9e7262468a57593e7ffd6180b6031b2ff703d32",
+    "package.py": "aceb8886ae23de420432803900f34100a482501a2dd9317886b5ca7dd49c5f41",
+    "paths.py": "22da47b3757b8843313e6ee299d1b05e4294699e8144598380fc5a3406be752c",
+    "recovery.py": "73547271f2b1f1cbd19e52a3dd7fa56e6addfba2d9f183937ee8663a9b28cec9",
+    "recovery_action.py": "36d1832fd63057609f957a8509a76d1920f525f14953e24d1ce7cbffcfe8f3b3",
+    "recovery_transition.py": "d70c5e06ceb331c36e04091f7762ae7fa1ca6774e3ddc0de9474b35936c4aacc",
+    "result_store.py": "74f383517c4ecb6bacd13d9ec405cba739236b08739f9fb4ab147eff3ae40003",
+    "routing.py": "0653568badaedc9141a773b79d32fa218f9afd9340492dddfca2d79e27ecf16c",
+    "runtime_dispatch.py": "b6ce34cd09d424d804947308fba0f128201ea985d6a3ce8e791ce10bd2570ab6",
+    "runtime_identity.py": "d2611d2cfff129c453e10aa4fdae45a781f9525d39a4870e6879e87eb0d9a8be",
+    "run_action.py": "7068b21538464bc80d0d78b0518f7a7a6e9e9fa19847423eb43cb806175092dd",
+    "run_control.py": "7df6361dff9743590c1987f6b3027f45e56cae59aec3006d69f425becf608493",
+    "run_lock.py": "3c3c693953f0f031be37e3df735dbd8058d5de0827ddf8def6166eacea65a648",
+    "run_loop.py": "e7ce02b6e7feb4fab95c52ab9f307458d4655145916ce27fd4ad7538cc6abde1",
+    "run_preparation.py": "a6f61158dd09eb12126c2bc2a0702f9d88437d420942d585b9f41d9aae32161a",
+    "run_transition.py": "e5c27cf753c53ec4c8d76b0c243fd03c0ebc6b330c1213c47fc7104724715ed3",
+    "schema.py": "45b407ab575780ead6cbf363f58f3a9dd66a9d41569702ff3e0256cd65caee59",
+    "startup_inspection.py": "77078f80c92efad5e5c45e03253146a11da5324d53fd6bb1bdc12ece9331d1ba",
+    "state.py": "2c56c1f269beed4a023cba369bac414e321eaf29d868626498ce198a9a7222fa",
+    "state_store.py": "5b3d268dcfa8b327b25c4f53deacfd5f8e5672bf8550afc9e41aa9306dc9c3fb",
+    "webui_dispatch.py": "9869165601e93296caf3573ddc885afa9f7bd2f8dd918489a16443078aa24466",
+    "__init__.py": "bc7ff7bb2fafe636163c1d1e84e384849bd2940691b3ed844bdd65a326ef690e"
+  },
+  "verbatim_functions": [
+    {
+      "name": "_TASKS",
+      "source_line": 87,
+      "sha256": "850fec58ad27b070ac648d88a639dc95794a1124d73f3142a28d7df472115fba"
+    },
+    {
+      "name": "_RUN_HANDLES",
+      "source_line": 90,
+      "sha256": "a9d25922b255f228174f8061acc890bea1ca9583751786f6c73f1585b6b07eaa"
+    },
+    {
+      "name": "_LIBRARY_ROOT_DEFAULT",
+      "source_line": 95,
+      "sha256": "eabbd7dedc173fef62faa0aad75f5cee93a1b2affb5ac79bd4578e5cf1627332"
+    },
+    {
+      "name": "_LIBRARY_ID",
+      "source_line": 96,
+      "sha256": "b51efe916a802fb0ef9f9d69c17da7522eba37f93bdf4e66f9233af2da715ac6"
+    },
+    {
+      "name": "_LIBRARY_MAX_WORKFLOWS",
+      "source_line": 97,
+      "sha256": "89d0f984ae8f38050098024a2d4142d4ca48f01ba7cecc2ec47c3500ed55a077"
+    },
+    {
+      "name": "_LIBRARY_MAX_ROOT_ENTRIES",
+      "source_line": 98,
+      "sha256": "6c02b966b594553922b0cbcd041c5a9db51d141f4a29436331e7c6008fc21910"
+    },
+    {
+      "name": "_LIBRARY_MAX_FILES",
+      "source_line": 99,
+      "sha256": "f52de59c3f19b8a3fee11c705acc59bf3c64b42a55d473cc65ae85bc963767e2"
+    },
+    {
+      "name": "_LIBRARY_MAX_ENTRIES",
+      "source_line": 100,
+      "sha256": "26e99a937669672b5f16ef837acf832fdea640cd8f10ae9d97ddc23cfaccd0b2"
+    },
+    {
+      "name": "_LIBRARY_MAX_DEPTH",
+      "source_line": 101,
+      "sha256": "f43b41e1f7ed8f6ed6a459e05659597f1427e5a68f11d86d0b8ae72f25200373"
+    },
+    {
+      "name": "_LIBRARY_MAX_FILE_BYTES",
+      "source_line": 102,
+      "sha256": "c00721d6582074133bc651776e1ae807c1b97f995ffc5798d92c95959e6c2d76"
+    },
+    {
+      "name": "_LIBRARY_MAX_MANIFEST_BYTES",
+      "source_line": 103,
+      "sha256": "e47318072ad0aa93f45ba8687e48ba98b4ad8a8f208d97988fa2f06e1bae3e76"
+    },
+    {
+      "name": "_LIBRARY_MAX_TOTAL_BYTES",
+      "source_line": 104,
+      "sha256": "edc16a415897dab373f72e5975ac95def8cb598f14901270e92bae12298b4dd1"
+    },
+    {
+      "name": "_LIBRARY_MAX_ARCHIVE_BYTES",
+      "source_line": 105,
+      "sha256": "24aa5aad93550db62fa524bf9ada6d1489114ff63e18ebeb6263f55beb0abeca"
+    },
+    {
+      "name": "_LIBRARY_MAX_PATH_BYTES",
+      "source_line": 106,
+      "sha256": "e02a77f2d46e21a146147ac1d0e64dbf25829380abd1522cc74a1264fa8c4675"
+    },
+    {
+      "name": "_LIBRARY_MAX_EXPANSION_RATIO",
+      "source_line": 107,
+      "sha256": "a1dc6ce868cf077b093f48b6dad8635914a21a927cb7b25ca826d02e4290bd98"
+    },
+    {
+      "name": "_LIBRARY_IMPORT_LOCK_SECONDS",
+      "source_line": 108,
+      "sha256": "49c00e92b872f9694fb3211c87ed221fad939672d88bb69c0f30ef168cfeb8a2"
+    },
+    {
+      "name": "_run_base",
+      "source_line": 1615,
+      "sha256": "4b0b49afbd5b3f46738e79937a77030134a803c2e95f7a95dd0abd45a9dc28dd"
+    },
+    {
+      "name": "_state_dir",
+      "source_line": 1618,
+      "sha256": "4a077ad47cd8b7954248b4dbec80b6ca7c2772e9f43def8ab0cfb502847ec98e"
+    },
+    {
+      "name": "_state_path",
+      "source_line": 1621,
+      "sha256": "13903c6f2cb3b4ddaecc3754ee7374dd33705bcff99ede4c623b7759f1b960a5"
+    },
+    {
+      "name": "_lock_path",
+      "source_line": 1624,
+      "sha256": "2d921c0f9c7bfa9fb40edcf9df82ace115211a590c091f56a9f26ca2b919a5ef"
+    },
+    {
+      "name": "_mag_path",
+      "source_line": 1627,
+      "sha256": "dc07520f69d27153b800d787bd82fb2923c0611d9b656ef4d87eea42f34a7a05"
+    },
+    {
+      "name": "_meta_path",
+      "source_line": 1630,
+      "sha256": "d302cf84f813010612a3a09db506e0f1af64af76d637bf3875b6e7973e7941f0"
+    },
+    {
+      "name": "_now",
+      "source_line": 1633,
+      "sha256": "701e44aa4c64b498274774bd39849b2708b4852997faa5bec1eead49f0fac2cb"
+    },
+    {
+      "name": "_load_meta",
+      "source_line": 1637,
+      "sha256": "279d5b80f0882b55849f5e6f08827a9bb8ad21e1f958b50415c4b485a40581d6"
+    },
+    {
+      "name": "_extract_model_id",
+      "source_line": 1706,
+      "sha256": "87939195910469569380355303e573f1ff9efedf0a5ca8d4783a85ea7ee9cdb3"
+    },
+    {
+      "name": "_extract_tool_id",
+      "source_line": 1724,
+      "sha256": "f0ffa85adf1af6c62cb3469f004853668c969bad5fcd102063e795b5272d928b"
+    },
+    {
+      "name": "_available_model_ids",
+      "source_line": 1742,
+      "sha256": "338a3635f3629a5d9852d477577460b33f8e76335e3ed0f6688291bb557c3b77"
+    },
+    {
+      "name": "_available_tool_ids",
+      "source_line": 1751,
+      "sha256": "613dc694efb6af8ad6dba924f057af68dfcbf590fbde78ebcdc0f2fe5349c3fc"
+    },
+    {
+      "name": "_document_logical_keys",
+      "source_line": 1760,
+      "sha256": "0e05e05be34ee89dd82faef0123d3993d2b8306774050b547b72371ed69825b7"
+    },
+    {
+      "name": "_validate_admission",
+      "source_line": 1775,
+      "sha256": "8a6a3a185d3e1d1477142c7254294b8c47e21121797526de490615d4c8d83339"
+    },
+    {
+      "name": "_normalize_cartridges",
+      "source_line": 1818,
+      "sha256": "aa6da227b8968858a4e8d8baadcb70680fea033b4c93bbf7029075318ea3c298"
+    },
+    {
+      "name": "_load_package_from_upload",
+      "source_line": 1830,
+      "sha256": "e2ba3fe6f904b6cca4a69b0b9294c124d1d554cfe71ea3fbb6826eda0247da67"
+    },
+    {
+      "name": "_LibraryError",
+      "source_line": 1867,
+      "sha256": "6c0d0ffbb3c05498a50236ef99970292f3755cce4e0032bd48abddb70bd567fa"
+    },
+    {
+      "name": "_initialize_library_root",
+      "source_line": 1873,
+      "sha256": "9561cd16591f6aeea0cdb957097f978436fbd8352a67dbaac11a9ec691331d06"
+    },
+    {
+      "name": "_library_root_fd",
+      "source_line": 1913,
+      "sha256": "79f1d671d68c3ed69d32e9b4736d94d91959c2c30b41447a35fc6cfc9c6e01fb"
+    },
+    {
+      "name": "_library_copy_tree",
+      "source_line": 1942,
+      "sha256": "1480c7e1b38124bba6e1b4fc1072cbd6c23eae49a16a1d67e27eb06e556a9ece"
+    },
+    {
+      "name": "_library_validation_error",
+      "source_line": 1990,
+      "sha256": "6214ca5816883566c15d0d9141d9dc0d6d7e3e39e32549be575847358a742726"
+    },
+    {
+      "name": "_library_preview_at",
+      "source_line": 2014,
+      "sha256": "982546f66e6507d009fb63be9fd6792434add5705f3cd5941dcbcb18fcc8b475"
+    },
+    {
+      "name": "_library_preview",
+      "source_line": 2039,
+      "sha256": "b882d0a8715dbeca837a0ffe99d720121f0f1b8e78cb2bf8f7a6b0fcb8ab45c7"
+    },
+    {
+      "name": "_library_list",
+      "source_line": 2046,
+      "sha256": "5ca9852bec2074381c8f8be7c1583300ef53f0c20c8ec1bdfbecbe18491a9028"
+    },
+    {
+      "name": "_library_zip_members",
+      "source_line": 2075,
+      "sha256": "56623641c2074484ffb44bfa9a6dd3b83d2e02dadd51b27befa7610388582be1"
+    },
+    {
+      "name": "_library_extract_zip",
+      "source_line": 2151,
+      "sha256": "642ecfd7b3e90f065a62de385482e744dc078702cb8772d91cfd3877af4a653e"
+    },
+    {
+      "name": "_library_sync_directories",
+      "source_line": 2187,
+      "sha256": "3aec1c24754faecc1a017614ffbb762141f0c5aadeed58cd01780f3ec9b2ba1a"
+    },
+    {
+      "name": "_library_import_lock",
+      "source_line": 2199,
+      "sha256": "96045d118162e4a0b0eda9cb1af7cd8b1e93a65a2a6673eb2e2f1183b85ac654"
+    },
+    {
+      "name": "_library_publish",
+      "source_line": 2218,
+      "sha256": "28bc5cd8bb05c657baa1d7f8d00486e6922b9380534e754eabe8e2e80e9662f5"
+    },
+    {
+      "name": "_library_check_conflict",
+      "source_line": 2232,
+      "sha256": "63b9bf989f272536ea460e31e9249426642f7ff9b641562d00bed1691bbd1e31"
+    },
+    {
+      "name": "_library_cleanup_stage",
+      "source_line": 2251,
+      "sha256": "2a2fe3ce115118e5dde4b4c7d543c75aebd8cc77e2cd638738fe75433ea8de28"
+    },
+    {
+      "name": "_library_import",
+      "source_line": 2258,
+      "sha256": "3117bc52b9013fa803585625ea14cf7f45de7da093c7c9b577002e93e78e5930"
+    },
+    {
+      "name": "_storage_root",
+      "source_line": 2326,
+      "sha256": "9d8a5e0594b5f128e7d3d5fa7f69754130f19ec5547833ce861b863b5cb1adda"
+    },
+    {
+      "name": "_storage_token",
+      "source_line": 2334,
+      "sha256": "5bb214e74c08759a26a53a55e3cd33ee174eafc28820e980a6bf09f5728e8feb"
+    },
+    {
+      "name": "_storage_fd",
+      "source_line": 2341,
+      "sha256": "7975fce6df0efc98c4f924046c1fecd965112e6f7927ccf4c6613128c1ebbd26"
+    },
+    {
+      "name": "_storage_write",
+      "source_line": 2359,
+      "sha256": "3240511a2e235e57508bb1d855d8273b09ce95070e2ed75d4e9e992ec9a31f51"
+    },
+    {
+      "name": "_STORAGE_LIBRARY_ROOT_GETTER",
+      "source_line": 2369,
+      "sha256": "e5bf4a03aef11774b35f326eb913971214c4dc1b4f5eec4c055ebf6a3e1ab036"
+    },
+    {
+      "name": "_retain_input_zip",
+      "source_line": 2372,
+      "sha256": "cc774594bb51d49571c18419f2712462cd989941097bbba02798109c634358ac"
+    },
+    {
+      "name": "_export_record",
+      "source_line": 2398,
+      "sha256": "804b178a13083ec4a8931e87a58f1a489dd6b16c6df83c4b468b0855b63dea89"
+    },
+    {
+      "name": "_save_export_record",
+      "source_line": 2406,
+      "sha256": "e69e7b5267e4fa303d27055a4c01989b4b80a988fe46e84ae26df23151c60a63"
+    },
+    {
+      "name": "_canonical_result_bytes",
+      "source_line": 2412,
+      "sha256": "8d0b740ff734b3910d0c51f31d893374c6ac1da1287248e1ddb301f484bec29a"
+    },
+    {
+      "name": "_export_files",
+      "source_line": 2430,
+      "sha256": "4564dce0f07346e625b12fafa9edf7c508ff5f8b8487af708f33069494283291"
+    },
+    {
+      "name": "_storage_child",
+      "source_line": 2478,
+      "sha256": "a4c6d826c288d34533b493198694aec0d39a75929edd83fb2adea73054adf37e"
+    },
+    {
+      "name": "_export_matches",
+      "source_line": 2487,
+      "sha256": "fac6b7db4a1e535b439fd0dea036af52f6f3c46d1852fe84caf58ae37fd24a1a"
+    },
+    {
+      "name": "_storage_publish_snapshot",
+      "source_line": 2505,
+      "sha256": "055bdd44b21a80c5eb451e4b52cd3582b6d71379798f1f2f74a3210e5c4725f0"
+    },
+    {
+      "name": "_export_run",
+      "source_line": 2543,
+      "sha256": "674004c48a5cbf16326d36069df50a55cd977c66ef9d28f5900414cf879ead30"
+    },
+    {
+      "name": "_attempt_export",
+      "source_line": 2592,
+      "sha256": "b093a59dbbfbab7c504d6b820efd6ff6add471ca58a38c8133944120aea4eb5d"
+    },
+    {
+      "name": "_auto_export_completed",
+      "source_line": 2609,
+      "sha256": "6428ffe5d1ab82a17b4c3ce36b6579fe1108bf104b3bb1b70417f50d8308e867"
+    },
+    {
+      "name": "_status_payload",
+      "source_line": 2622,
+      "sha256": "709e16419fd05eb9796a8b4b1b9945557a40e547f613b2440a0cd8a01a667f06"
+    },
+    {
+      "name": "_load_state",
+      "source_line": 2679,
+      "sha256": "dcb73db6666206ebbf1f2322a891a74ebd01fa5b4f5b208a038e33f23ca9236a"
+    },
+    {
+      "name": "_results_payload",
+      "source_line": 2688,
+      "sha256": "00f4e1961fa1858015f8ad66fedf4aaad856e1193137bed1798e830a2f574e5b"
+    },
+    {
+      "name": "_start_precheck",
+      "source_line": 2738,
+      "sha256": "6764a5391ee724d4fea71be141109d882d81ee0f7620ef421e2d3c9c45429986"
+    },
+    {
+      "name": "_lost_runtime_interception",
+      "source_line": 2761,
+      "sha256": "eca42f1919bde39a895c9de6d5389a3008c131c13087ce1dcf8e240646f3133c"
+    },
+    {
+      "name": "_recover_run_decision",
+      "source_line": 2815,
+      "sha256": "9aed96648c3d5ed78f831b6fc9463cafb077ff23e96dbed261fad68e4ab2c31e"
+    },
+    {
+      "name": "_run_bg_dispatch",
+      "source_line": 2902,
+      "sha256": "782278928dc866ebb070006f45fba075447a52910b8663b52f3b83b17321554f"
+    },
+    {
+      "name": "_stop_run_decision",
+      "source_line": 2935,
+      "sha256": "c77eb0e4ee8e46503f2755cd2371683dad10026217b81f2de6fe5bf5e28392cc"
+    }
+  ],
+  "helper_sha256": "7e85f34bccd792c30dcc927a109c3ae8a2d6d85b23d0c518f486cdedfd5f8004",
+  "pi6_adaptation": {
+    "source_repository": "https://github.com/Nundrian/Magazine",
+    "source_commit": "09a8706e5f01fe6d8db0b8941ccf0d772b374005",
+    "source_file": "integrations/open_webui/function/magazine_simple_reliability3.py",
+    "source_sha256": "28a9f3172192efbd7219a017bdfe7e2d5737882d9b0e3684478bdfc367ec730b",
+    "source_version": "0.2.0-reliability.3",
+    "adapted": {
+      "protocol.py": [
+        "recovery_policy (verbatim semantics)",
+        "loop_policy (verbatim semantics)",
+        "load_workflow declarations (handover, artifacts, retry_safe, handover_mode, result_profile)",
+        "json_objects/closing_object/halt_reason/judge (Pi stop-reason facts instead of Open WebUI output items)",
+        "result_json",
+        "select_pointer"
+      ],
+      "handover.py": [
+        "strict_json",
+        "durable_json",
+        "read_result_file",
+        "validate_outgoing",
+        "validate_envelope (chat_id -> session_id)",
+        "commit_attempt_result",
+        "committed_result -> committed_payload",
+        "archive_attempt_chat -> archive_session",
+        "prepare_files",
+        "collect_outputs",
+        "snapshot_candidates"
+      ],
+      "ledger.py": [
+        "decide_retry (Pi completion codes added explicitly)",
+        "retry_text",
+        "sum_tokens/update_tokens semantics",
+        "render_ledger (Pi columns)"
+      ],
+      "antiloop.py": [
+        "LoopPolice/completed_tool_events (Open WebUI polling replaced by Pi SDK message_end/tool_execution_end events)"
+      ],
+      "executor.py": [
+        "execute_file_run attempt loop and fingerprints",
+        "result_prompt/build_prompt (publisher tool instead of a Python helper script)",
+        "attempt_chat timeout/loop handling",
+        "retry_storage"
+      ],
+      "worker.mjs": [
+        "PUBLISH_HELPER semantics as a capability-limited Pi custom tool (magazine_publish_result)"
+      ]
+    },
+    "not_used": [
+      "Open WebUI HTTP client, routes, authentication, chat creation/polling, task stop API, Engine queue, page HTML, Sidebar launcher, Round Robin/queue scheduler"
+    ]
+  },
+  "pi7_scheduler": {
+    "source": "Magazine Simple 0.3.0-scheduler.rc1",
+    "source_zip_sha256": "b2acaad4a27260b163b87d732fb38886c90623f72b249683efebab93cab81864",
+    "source_file_sha256": "be0d312ce528a3c597a491705b8c749ed35ff8a8e52805535ebb383bb93a91ca",
+    "adapted": {
+      "scheduler.py": [
+        "Engine journal load/_persist/set_mode",
+        "start (admission) -> admit",
+        "_next -> pump",
+        "boundary -> turn",
+        "finished",
+        "dequeue",
+        "mark_interrupted retention -> needs_start entries"
+      ],
+      "client/entry.mjs": [
+        "dashboard.js restoration order and project summary",
+        "ledger.js six-column overview with lazy attempt details and filter"
+      ],
+      "service.py": [
+        "/runs project summary fields",
+        "/scheduler GET/PUT -> scheduler/set_scheduler actions"
+      ]
+    },
+    "not_used": [
+      "Open WebUI routes/auth/credentials, confirm_inactive dialog, sidebar launcher, appearance selector, chat links"
+    ]
+  },
+  "original_helper_sha256": "8d3597c8b15ff23ab101fd49d73f0b830a546e5cfe61481221c0ff482d0fb9c3",
+  "pi_helper_changes": [
+    "Typed publication errno and server-only filesystem diagnostics",
+    "Export fallback based on captured unsupported error, never stale ctypes errno"
+  ]
+}

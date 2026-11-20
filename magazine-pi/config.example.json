@@ -1,0 +1,7 @@
+{
+  "workspace": "/workspace",
+  "agentDir": "/root/.pi/agent",
+  "python": "/opt/magazine-venv/bin/python",
+  "allowedTools": [],
+  "workerExtensionPaths": []
+}

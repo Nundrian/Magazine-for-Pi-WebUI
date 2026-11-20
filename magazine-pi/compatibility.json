@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "note": "Exact host/SDK pairs Magazine may run on. Any other pair is refused with a diagnostic unless the operator acknowledges that exact pair in config.json (compatibilityOverride).",
+  "pairs": [
+    {
+      "host": "0.96.1",
+      "sdk": "1.0.2",
+      "level": "accepted",
+      "evidence": "pi.1-pi.5 live acceptance (historical) plus this release's offline suite against the exact installed npm tree"
+    },
+    {
+      "host": "0.115.0",
+      "sdk": "1.1.0",
+      "level": "offline-verified",
+      "evidence": "offline suite with the real SDK 1.1.0 and a deterministic fake provider; isolated real-host plugin smoke; no live model acceptance"
+    },
+    {
+      "host": "0.120.0",
+      "sdk": "1.5.2",
+      "level": "offline-verified",
+      "evidence": "offline suite with the real SDK 1.5.2 and a deterministic fake provider; isolated real-host plugin smoke; no live model acceptance"
+    }
+  ]
+}
