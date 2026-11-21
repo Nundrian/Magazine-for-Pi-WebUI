@@ -1,6 +1,3 @@
-* text=auto
-# Source release and deployment instructions must remain byte-for-byte identical
-# to the archived ZIPs, including the original CRLF line endings.
-magazine-pi/** -text
-deployment/** -text
+# Preserve exact archived bytes and frozen component hashes on every platform.
+* -text
 *.zip binary

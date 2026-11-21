@@ -1,0 +1,21 @@
+{
+  "id": "magazine-pi",
+  "name": "Magazine",
+  "nameEn": "Magazine",
+  "version": "0.1.0-pi.8-ui.3",
+  "description": "Prepare bounded cartridges and run them sequentially in fresh Pi sessions, with committed handovers, bounded recovery and Antiloop.",
+  "descriptionEn": "Prepare bounded cartridges and run them sequentially in fresh Pi sessions, with committed handovers, bounded recovery and Antiloop.",
+  "icon": "\ud83d\udcda",
+  "apiVersion": 2,
+  "permissions": [
+    "ui",
+    "http",
+    "tools",
+    "fs"
+  ],
+  "requires": {
+    "hostApi": 2
+  },
+  "entry": "index.mjs",
+  "client": "client/entry.mjs"
+}
