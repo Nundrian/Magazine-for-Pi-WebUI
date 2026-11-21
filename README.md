@@ -34,7 +34,7 @@ credentials, sessions, runs and workspaces. Run tests with the documented
 PYTHONPATH and actual host SDK path. Automated providers are deterministic
 loopback fixtures, separate from real local-model acceptance.
 
-This repair branch contains the complete source. Earlier reports are historical;
+This repository contains the complete source. Earlier reports are historical;
 the import repair report records current checks. No Open WebUI service is required
 or modified. Magazine for Open WebUI is a separate implementation. MIT licensed.
 
