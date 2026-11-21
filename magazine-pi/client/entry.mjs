@@ -297,7 +297,7 @@ export default {
         <div class="chat-messages" data-id="chat-messages" role="log" aria-label="Read-only worker conversation" tabindex="0"></div><button data-id="chat-load-more" disabled>Load next messages</button>
         <details><summary>Visible message data (JSON)</summary><pre data-id="chat-raw"></pre></details></div></div>`;
       const manage=panels.manage;manage.innerHTML=`<h2>Manage workflows and saved work</h2><p>Template deletion and saved-run deletion are separate. Deleted Magazine records are recoverable from the trash below. Actual Windows/project files are kept.</p>
-        <div class="confirm" data-id="delete-dialog" role="alertdialog" aria-label="Confirm Magazine deletion" hidden><p data-id="delete-summary"></p><label>Type the exact ID to confirm<input data-id="delete-confirmation" autocomplete="off"></label><button data-id="delete-confirm">Confirm deletion</button><button data-id="delete-cancel">Cancel</button></div>
+        <div class="confirm" data-id="delete-dialog" role="alertdialog" aria-label="Confirm Magazine deletion" hidden><p data-id="delete-summary"></p><button data-id="delete-confirm">Confirm deletion</button><button data-id="delete-cancel">Cancel</button></div>
         <h3>Workflow templates</h3><div data-id="manage-templates"></div><h3>Saved work / runs</h3><div data-id="manage-runs"></div><h3>Recoverable Magazine trash</h3><div data-id="manage-trash"></div>`;
       selected.remove();main.append(header,nav,...Object.values(panels));
       if(typeof ResizeObserver!=='undefined'){headerObserver=new ResizeObserver(()=>main.style.setProperty('--mag-header-height',`${header.hidden?0:header.offsetHeight}px`));headerObserver.observe(header);}
@@ -396,7 +396,8 @@ export default {
     async function confirmDelete(kind,id){
       let text;if(kind==='run'){const p=await call('delete_preview',{run_id:id});text=p.message+' Removed: '+p.removed.join(', ')+'. Kept: '+p.kept.join(', ')+'.';}
       else text='Remove this workflow template from the library into recoverable Magazine trash. Saved run snapshots, actual project files, Input ZIPs and exports are kept. Live dependencies block deletion.';
-      deleteTarget={kind,id};q('delete-summary').textContent=text+' ID: '+id;q('delete-confirmation').value='';q('delete-confirm').disabled=true;q('delete-dialog').hidden=false;q('delete-confirmation').focus();
+      const name=(kind==='run'?runs.find(r=>r.run_id===id):projects.find(p=>p.workflow_id===id))?.name||id;
+      deleteTarget={kind,id};q('delete-summary').textContent=`Delete ${kind==='run'?'saved work':'workflow'} “${name}”? `+text;q('delete-confirm').disabled=false;q('delete-dialog').hidden=false;q('delete-cancel').focus();
     }
     layout();
     for(const id of ['chat-search','chat-run-filter','chat-model-filter','chat-status-filter'])q(id).addEventListener(id==='chat-search'?'input':'change',chatList);
@@ -420,10 +421,9 @@ export default {
       const changes=selects.map(s=>`${s.dataset.cartridge}: ${(q('individual').checked&&s.value)||q('shared-model').value||'Unassigned'} → ${v.plan.cartridge_models[s.dataset.cartridge]}${v.plan.rationale[s.dataset.cartridge]?' — '+v.plan.rationale[s.dataset.cartridge]:''}`);
       q('individual').checked=true;q('shared-model').value='';q('bulk').hidden=false;for(const s of selects){s.hidden=false;s.value=v.plan.cartridge_models[s.dataset.cartridge];}
       planApplied=v.plan;q('workflow-steps').open=true;q('plan-state').textContent='Applied to setup only. You may override models manually; Prepare and Start are still separate actions.';q('plan-preview').replaceChildren(...changes.map(text=>make('p',{text})));allocation();message('Suggestions applied to setup. Review manual overrides, then Prepare.');});
-    q('delete-confirmation').addEventListener('input',()=>{q('delete-confirm').disabled=!deleteTarget||q('delete-confirmation').value!==deleteTarget.id;});
     button('delete-cancel',()=>{deleteTarget=null;q('delete-dialog').hidden=true;q('delete-confirm').disabled=true;});
-    button('delete-confirm',async()=>{if(!deleteTarget)return;const {kind,id}=deleteTarget;if(q('delete-confirmation').value!==id)throw new Error('Type the exact ID to confirm deletion');
-      const result=await call(kind==='run'?'delete_run':'delete_template',{...(kind==='run'?{run_id:id}:{project_id:id}),confirmation:id});
+    button('delete-confirm',async()=>{if(!deleteTarget)return;const {kind,id}=deleteTarget;q('delete-confirm').disabled=true;
+      let result;try{result=await call(kind==='run'?'delete_run':'delete_template',{...(kind==='run'?{run_id:id}:{project_id:id}),confirmation:id});}catch(error){q('delete-confirm').disabled=false;throw error;}
       q('delete-dialog').hidden=true;deleteTarget=null;if(kind==='run'&&runId===id)await selectRun('');if(kind==='template'&&preview?.project_id===id){preview=null;planRevision++;q('preview-head').replaceChildren();q('cartridges').replaceChildren();q('prepare').disabled=true;}
       await refresh();await renderManage();message(result.message);});
     q('shared-model').addEventListener('change',allocation);q('individual').addEventListener('change',allocation);q('cartridges').addEventListener('change',allocation);

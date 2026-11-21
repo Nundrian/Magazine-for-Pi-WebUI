@@ -278,7 +278,8 @@ def main():
             checks['firefox_keyboard_selector']=select.input_value()==ids[1]
             page.locator('[data-id=nav-manage]').click()
             page.locator(f'[data-delete-run="{sparerun}"]').click()
-            page.locator('[data-id=delete-confirmation]').fill(sparerun)
+            checks['deletion_has_no_typed_confirmation']=page.locator('[data-id=delete-dialog] input').count()==0
+            checks['deletion_confirm_ready_without_typing']=page.locator('[data-id=delete-confirm]').is_enabled()
             page.locator('[data-id=delete-confirm]').click()
             page.wait_for_function('(rid)=>!document.querySelector(`[data-delete-run="${rid}"]`)',arg=sparerun)
             checks['delete_inactive_run']=not (data/'magazine/runs/local'/sparerun).exists()

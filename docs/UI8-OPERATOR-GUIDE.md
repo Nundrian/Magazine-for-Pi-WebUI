@@ -104,7 +104,7 @@ are storage labels, not proof of separate browser accounts.
 
 Open **Manage**. Workflow templates and saved runs are separate lists with View,
 export/download where applicable, and clearly labelled Delete actions. Review
-the preview and type the exact ID to confirm. There is no Delete all.
+the preview and choose Confirm deletion, or Cancel to keep it. No typing is required. There is no Delete all.
 
 **Delete template** removes only the imported template from the active list;
 prepared run snapshots remain. A live dependency blocks deletion.
@@ -147,7 +147,7 @@ edit or updater CMD was performed for this candidate.
    retry. Confirm refresh preserves selection and does not start anything.
 5. On a disposable imported workflow, test plan Validate → Apply → manual override
    → Prepare without Start. Confirm absent catalogue models are refused. Test
-   typed-ID deletion and Restore of disposable inactive work, keeping its template
+   confirmation-button deletion and Restore of disposable inactive work, keeping its template
    and actual project file. Confirm an active/queued deletion is refused.
 6. If the owner wants production execution acceptance, use a separately approved
    small run. Open its live chat, switch to old history and back, verify visible
