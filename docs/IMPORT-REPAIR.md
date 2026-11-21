@@ -1,5 +1,7 @@
 # Workflow import repair — 0.1.0-pi.8-ui.3
 
+Follow-up, 21 November: workflow and saved-work deletion now use Confirm deletion / Cancel without typed IDs. This client-only change passed 14 actual-interface checks and 67 related backend regressions; no service restart or inference was needed. The 20 November archive/parity evidence below describes that earlier release snapshot.
+
 Verified on 20 November 2026. Import/runtime acceptance and model answer quality
 are separate. Original workflow ZIPs, prompts, private config and full execution
 evidence remain local and are excluded from public source and packages.
