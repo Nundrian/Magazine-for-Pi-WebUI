@@ -1,4 +1,4 @@
-# Install or update Magazine 0.1.0-pi.8-ui.4
+# Install or update Magazine 0.1.0-pi.8-ui.5
 
 Plugin ID: `magazine-pi`. This is the native Pi plugin, separate from Open WebUI
 Magazine and the older Magazine Simple for Pi plugin. The distributed ZIP contains
@@ -38,7 +38,7 @@ manifest.json, index.mjs, client/ and the Python service files. For a Compose
 service called `pi-web-ui`, from the folder containing its Compose file:
 
 ```powershell
-Expand-Archive -LiteralPath .\Magazine-Pi-0.1.0-pi.8-ui.4-plugin.zip -DestinationPath .\package
+Expand-Archive -LiteralPath .\Magazine-Pi-0.1.0-pi.8-ui.5-plugin.zip -DestinationPath .\package
 $packagePath = (Resolve-Path .\package).Path
 docker compose stop pi-web-ui
 docker compose run --rm --no-deps --volume "${packagePath}:/opt/magazine-install:ro" pi-web-ui install /opt/magazine-install/magazine-pi --data-dir /app/.pi-web
@@ -67,7 +67,7 @@ this file outside shareable archives. For a named data volume, write the same
 configuration inside that volume rather than assuming a Windows `data` folder.
 
 Start with `docker compose up -d`, use Pi's native token sign-in, then open
-**Plugins → Magazine**. Confirm version 0.1.0-pi.8-ui.4. Native token, networking
+**Plugins → Magazine**. Confirm version 0.1.0-pi.8-ui.5. Native token, networking
 and model-provider setup remain Pi's responsibility; no extra login service is
 added by Magazine. An Ollama model must also appear in Pi's configured catalogue.
 

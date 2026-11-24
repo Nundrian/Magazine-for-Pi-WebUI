@@ -31,7 +31,7 @@ import tokens
 import ui_support as ui
 import interrupted
 
-VERSION = '0.1.0-pi.8-ui.4'
+VERSION = '0.1.0-pi.8-ui.5'
 CORE = {'ok': True}
 for key, module in {'ar':'async_runner','state':'state','ss':'state_store',
     'doc':'document','rp':'run_preparation','ra':'run_action','rl':'run_lock',

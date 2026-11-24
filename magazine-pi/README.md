@@ -1,4 +1,4 @@
-# Magazine for Pi WebUI — 0.1.0-pi.8-ui.2
+# Magazine for Pi WebUI — 0.1.0-pi.8-ui.5
 
 Native Pi plugin ID `magazine-pi`. Run bounded cartridges in fresh saved worker
 sessions, using explicit models and tools, committed results and durable records.
@@ -28,3 +28,6 @@ covers host 0.120.0 / SDK 1.5.2 with scripted providers and the installed interf
 Other inherited allowed pairs are 0.96.1/1.0.2 and 0.115.0/1.1.0; they have not
 been reaccepted for this alignment release. Unknown pairs are refused. No real
 local LLM inference or comparative model benchmark was used for this UI update.
+
+Ollama workflow selectors now follow the installed chat-model library automatically,
+without rewriting configuration or saved assignments. See [automatic models](docs/AUTOMATIC-MODELS.md).

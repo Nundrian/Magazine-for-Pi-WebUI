@@ -2,7 +2,7 @@
   "id": "magazine-pi",
   "name": "Magazine",
   "nameEn": "Magazine",
-  "version": "0.1.0-pi.8-ui.4",
+  "version": "0.1.0-pi.8-ui.5",
   "description": "Prepare bounded cartridges and run them sequentially in fresh Pi sessions, with committed handovers, bounded recovery and Antiloop.",
   "descriptionEn": "Prepare bounded cartridges and run them sequentially in fresh Pi sessions, with committed handovers, bounded recovery and Antiloop.",
   "icon": "\ud83d\udcda",

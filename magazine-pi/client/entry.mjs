@@ -181,6 +181,7 @@ const HTML=`<style>${STYLE}</style><main class="mag">
  <div data-id="cartridges"></div></section>
 <section><h2>2. Models, tools and protection</h2>
  <div class="row"><label>Workflow model<select data-id="shared-model"></select></label><label class="shrink inline"><input type="checkbox" data-id="individual"> Assign models per cartridge</label></div>
+ <p class="dim" data-id="catalogue-status" role="status"></p>
  <div class="row" data-id="bulk" hidden><label>Model for selected cartridges<select data-id="bulk-model"></select></label><div class="shrink"><button data-id="bulk-apply">Apply to selected</button></div></div>
  <p><small>Selected tools apply to every cartridge and run with the Pi server's OS permissions; a tool allowlist is not a sandbox, and the open chat's permission preset does not apply to workers. No tools are selected by default.</small></p><div data-id="tools"></div>
  <div class="row"><div><label class="inline"><input type="checkbox" data-id="antiloop" checked> Antiloop (stops confirmed repeated tool loops)</label></div>
@@ -230,7 +231,7 @@ export default {
     const button=(id,fn)=>q(id).addEventListener('click',attempt(fn));
     const make=(tag,props={},...kids)=>{const n=document.createElement(tag);for(const [k,v] of Object.entries(props)){if(k==='text')n.textContent=v;else if(k==='cls')n.className=v;else if(k.startsWith('aria-')||k.startsWith('data-'))n.setAttribute(k,v);else n[k]=v;}n.append(...kids);return n;};
     const option=(value,label)=>make('option',{value,text:label});
-    const fillModels=(select,first='Choose a model')=>{const keep=select.value;select.replaceChildren(option('',first));for(const m of cat.models)select.append(option(m.id,m.name+' — '+m.provider));select.value=keep;};
+    const fillModels=(select,first='Choose a model')=>{const keep=select.value;select.replaceChildren(option('',first));for(const m of cat.models)select.append(option(m.id,m.name+' — '+m.provider));if(keep&&!cat.models.some(m=>m.id===keep)){const unavailable=option(keep,keep+' — unavailable');unavailable.disabled=true;select.append(unavailable);}select.value=keep;};
     const remember=async(update)=>{if(update.run_id!==undefined)store.set(LAST_RUN,update.run_id);if(update.project_id!==undefined)store.set(LAST_PROJECT,update.project_id);try{await call('view_state',{set:update});}catch{}};
     const two=(a,b)=>make('td',{},document.createTextNode(a),...(b?[make('span',{cls:'sub',text:b})]:[]));
 
@@ -619,12 +620,28 @@ export default {
       if(!id){q('token-counter').hidden=true;q('run-summary').replaceChildren(make('p',{cls:'dim',text:runs.length?'Select a Magazine above to view its saved progress.':'Prepare a workflow to begin.'}));q('ledger').replaceChildren();for(const b of ['start','stop','reconcile','recover','progress','export','download','download-jsonl'])q(b).disabled=true;return;}
       await progress(false);
     }
+    let catalogueBusy=false;
+    function applyCatalogue(models){
+      const changed=JSON.stringify(cat.models)!==JSON.stringify(models.models);
+      const toolsChanged=JSON.stringify(cat.tools)!==JSON.stringify(models.tools);
+      cat=models;
+      if(changed){fillModels(q('shared-model'));fillModels(q('bulk-model'));
+        for(const s of q('cartridges').querySelectorAll('select'))fillModels(s,'Use workflow model');
+        allocation();}
+      if(toolsChanged){const chosen=new Set([...q('tools').querySelectorAll('input:checked')].map(i=>i.value));q('tools').replaceChildren();
+        for(const tool of cat.tools){const input=make('input',{type:'checkbox',value:tool.id,checked:chosen.has(tool.id)});q('tools').append(make('label',{cls:'inline',title:tool.description||''},input,document.createTextNode(' '+tool.name)));}}
+      q('catalogue-status').textContent=cat.ollama?(cat.ollama.warnings?.length?cat.ollama.warnings.join(' '):
+        `Ollama: ${cat.ollama.available} installed chat models. Updates automatically every 15 seconds while this view is visible.`):'';
+    }
+    async function refreshCatalogue(){
+      if(closed||catalogueBusy)return;catalogueBusy=true;
+      try{const models=await call('catalogue');if(!closed)applyCatalogue(models);}
+      catch{if(!closed){applyCatalogue({...cat,models:cat.models.filter(m=>m.provider!=='ollama')});q('catalogue-status').textContent='Model catalogue refresh failed. Ollama models are unavailable; retrying automatically.';}}
+      finally{catalogueBusy=false;}
+    }
     async function refresh(){
       const [lib,models]=await Promise.all([call('library'),call('catalogue')]);if(closed)return;
-      cat=models;projects=lib.projects.workflows;renderProjects();fillModels(q('shared-model'));fillModels(q('bulk-model'));
-      for(const s of q('cartridges').querySelectorAll('select'))fillModels(s,'Use workflow model');
-      const chosen=new Set([...q('tools').querySelectorAll('input:checked')].map(i=>i.value));q('tools').replaceChildren();
-      for(const tool of cat.tools){const input=make('input',{type:'checkbox',value:tool.id,checked:chosen.has(tool.id)});q('tools').append(make('label',{cls:'inline',title:tool.description||''},input,document.createTextNode(' '+tool.name)));}
+      applyCatalogue(models);projects=lib.projects.workflows;renderProjects();
       await loadRuns();allocation();message(lib.projects.message||'Magazine ready.');
     }
     // ------------------------------------------------------------- events
@@ -678,6 +695,7 @@ export default {
     button('download-jsonl',()=>download('download_jsonl','application/x-ndjson;charset=utf-8','Run JSONL downloaded. Retained records only; unrecorded history is not reconstructed.'));
     // GETs only while open: polling never starts, stops or reorders work.
     const timer=setInterval(()=>{tick++;if(closed||document.hidden)return;
+      if(tick%10===0)void refreshCatalogue();
       if(tick%2===0)void loadRuns().catch(e=>{q('dashboard-state').textContent='Reconnection failed: '+e.message+' · retrying';});
       if(panel==='chats'){if(tick%3===0)void loadChats(false).catch(e=>{q('chat-state').textContent=e.message;});void readChat();}
       if(!runId||polling)return;if(isLive(last)||tick%5===0)void progress(false);},1500);

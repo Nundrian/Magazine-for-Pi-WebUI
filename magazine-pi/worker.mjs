@@ -11,6 +11,7 @@ import crypto from 'node:crypto';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import readline from 'node:readline';
+import {syncOllamaModels} from './ollama_models.mjs';
 
 const send = value => process.stdout.write(JSON.stringify(value) + '\n');
 console.log = (...args) => console.error(...args);
@@ -191,12 +192,14 @@ export async function execute(request, onSession = () => {}, shouldAbort = () =>
     modelsPath:path.join(request.agentDir,'models.json'),
     modelsStorePath:path.join(request.dataDir,'models-store.json'), allowModelNetwork:false});
   if (runtime.getError()) throw new Error(`Pi model configuration: ${runtime.getError()}`);
-  const models = (await runtime.getAvailable()).filter(m => runtime.getPhysicalModel(m.provider, m.id));
+  const discovery=await syncOllamaModels(runtime,path.join(request.agentDir,'models.json'));
+  const models = (await runtime.getAvailable()).filter(m => runtime.getPhysicalModel(m.provider, m.id))
+    .filter(m=>m.provider!=='ollama'||discovery.ids===null||discovery.ids.has(m.id));
   const catalogue = models.map(m=>({id:`${m.provider}/${m.id}`,name:m.name,provider:m.provider}));
   const selected = models.find(m=>`${m.provider}/${m.id}` === request.model);
   const isCatalogue = request.action === 'catalogue';
   if (!isCatalogue && !selected) throw new Error(`Assigned model unavailable: ${request.model}`);
-  if (isCatalogue && !models.length) return {models:[],tools:[],piVersion:version};
+  if (isCatalogue && !models.length) return {models:[],tools:[],piVersion:version,ollama:discovery.status};
   const requested = isCatalogue ? [] : (request.tools || []);
   if (!Array.isArray(requested) || requested.some(t => typeof t !== 'string' || !TOOL_NAME.test(t) || t === PUBLISHER_TOOL))
     throw new Error('Invalid tool allowlist entry');
@@ -227,7 +230,7 @@ export async function execute(request, onSession = () => {}, shouldAbort = () =>
     if (modelFallbackMessage) throw new Error('Pi attempted model substitution');
     await session.bindExtensions({});
     const tools = session.getAllTools().map(t=>({id:t.name,name:t.label || t.name,description:t.description}));
-    if (isCatalogue) return {models:catalogue,tools:tools.filter(t=>t.id!==PUBLISHER_TOOL),piVersion:version};
+    if (isCatalogue) return {models:catalogue,tools:tools.filter(t=>t.id!==PUBLISHER_TOOL),piVersion:version,ollama:discovery.status};
     if (expectedTools.some(t=>!tools.some(x=>x.id===t))) throw new Error('Requested tool unavailable');
     session.setActiveToolsByName(expectedTools);
     if (session.getActiveToolNames().sort().join('\0') !== [...expectedTools].sort().join('\0')) throw new Error('Pi tool allowlist differs');

@@ -10,7 +10,7 @@ plugin=ROOT/'magazine-pi'
 VERSION=json.loads((plugin/'manifest.json').read_text())['version']
 for name in ('INSTALL.md','SECURITY.md','ACCEPTANCE.md','UI-STYLING.md','MODELS-AND-JSONL.md','SIMPLIFICATION.md',
              'COMPATIBILITY.md','TESTING.md','PI6-REPORT.md','PI7-SCHEDULER.md',
-             'UI8-OPERATOR-GUIDE.md','UI8-REPORT.md','UI8-ALIGNMENT.md','LINUX-STORAGE.md','IMPORT-REPAIR.md','RESTART-RECOVERY.md'):
+             'UI8-OPERATOR-GUIDE.md','UI8-REPORT.md','UI8-ALIGNMENT.md','LINUX-STORAGE.md','IMPORT-REPAIR.md','RESTART-RECOVERY.md','AUTOMATIC-MODELS.md'):
     (plugin/'docs').mkdir(exist_ok=True)
     shutil.copy2(ROOT/'docs'/name,plugin/'docs'/name)
 reuse=json.loads((plugin/'reused-components.json').read_text())

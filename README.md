@@ -63,8 +63,8 @@ Review the deliverables and use real task-specific tests.
 
 ## Install and compatibility
 
-Current source version: **0.1.0-pi.8-ui.4**, including guarded restart recovery
-and the explicit **Reconcile interrupted run** control. The tested Docker Desktop deployment uses
+Current source version: **0.1.0-pi.8-ui.5**, including automatic Ollama model
+discovery and guarded interrupted-run reconciliation. The tested Docker Desktop deployment uses
 **Pi WebUI 0.120.0, SDK 1.5.2, Node 22.23.5 and Python 3.11**.
 This is the WebUI plugin, not the separate Pi CLI or Magazine for Open WebUI.
 
@@ -81,6 +81,7 @@ the installation guide. Documentation screenshots are not plugin runtime assets.
 ## More detail
 
 - [Technical guide and source map](docs/TECHNICAL-GUIDE.md)
+- [Automatic Ollama model discovery](docs/AUTOMATIC-MODELS.md)
 - [Restart recovery and reconciliation](docs/RESTART-RECOVERY.md)
 - [Restart-repair validation: 929 passed, 1 legacy skip](docs/RESTART-RECOVERY-ACCEPTANCE.md)
 - [Earlier import repair and real-model qualifications](docs/IMPORT-REPAIR.md)
