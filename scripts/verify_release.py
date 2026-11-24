@@ -31,7 +31,8 @@ def main():
     for name in ('INSTALL.md', 'SECURITY.md', 'ACCEPTANCE.md', 'UI-STYLING.md', 'MODELS-AND-JSONL.md', 'SIMPLIFICATION.md'):
         assert (plugin / 'docs' / name).read_bytes() == (ROOT / 'docs' / name).read_bytes(), name
     reuse = json.loads((plugin / 'reused-components.json').read_text())
-    assert len(reuse['core']) == manifest['core_files_unchanged'] == 29
+    assert len(reuse['core']) == manifest['core_files_verified'] == 29
+    assert manifest['core_files_unchanged'] == 29 - len(reuse.get('pi_core_changes', {}))
     for name, expected in reuse['core'].items():
         assert hashlib.sha256((plugin / 'magazine' / name).read_bytes()).hexdigest() == expected, name
     assert hashlib.sha256((plugin / 'beta5_helpers.py').read_bytes()).hexdigest() == reuse['helper_sha256']
@@ -84,7 +85,7 @@ def main():
             assert not any(part in Path(name).parts for part in ('runtime', 'private', 'production-backups', 'evidence', 'reference', '.baseline-venv'))
             assert b'C:\\Codex' not in source.read_bytes() and b'C:\\AI_Workflows' not in source.read_bytes(), name
             assert (b'pi' + b'bonsai') not in source.read_bytes().lower(), name
-    report = {'version': version, 'PASS': True, 'core_files_unchanged': 29,
+    report = {'version': version, 'PASS': True, 'core_files_unchanged': manifest['core_files_unchanged'],
               'documentation_copies_agree': True, 'checksums_agree': True,
               'two_builds_identical': True, 'archives': results}
     report['runtime_files_byte_identical_to_previous_release'] = runtime_unchanged

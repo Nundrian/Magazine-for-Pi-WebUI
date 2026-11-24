@@ -29,8 +29,9 @@ import ledger as lg
 import protocol as proto
 import tokens
 import ui_support as ui
+import interrupted
 
-VERSION = '0.1.0-pi.8-ui.3'
+VERSION = '0.1.0-pi.8-ui.4'
 CORE = {'ok': True}
 for key, module in {'ar':'async_runner','state':'state','ss':'state_store',
     'doc':'document','rp':'run_preparation','ra':'run_action','rl':'run_lock',
@@ -265,7 +266,11 @@ class Service:
             return self.ledger_view(owner, rid)
         if action == 'start':
             return await self.start(owner, rid, payload)
+        if action == 'reconcile':
+            return self.reconcile_interrupted(owner, rid)
         if action == 'stop':
+            if payload.get('status') == 'RUNNING' and not (payload.get('execution') or {}).get('owner_alive'):
+                return self.reconcile_interrupted(owner, rid)
             queue = self.scheduler.describe(rid)
             if queue['queued'] and (not queue['entered_core'] or queue['recovery_required']) \
                     and payload.get('status') in ('READY', 'HALTED'):
@@ -282,6 +287,13 @@ class Service:
                 self.scheduler.forget(rid)
             return result
         if action == 'recover':
+            evidence = interrupted.diagnostics(self, owner, rid)
+            require(not self.has_task(owner, rid), 409, 'A local task is still finishing; recovery is not yet safe')
+            execution = payload.get('execution') or {}
+            require(not execution or execution.get('owner_alive') or evidence['owner_extinct'],
+                    409, 'Recorded execution owner is live or uncertain; recovery refused')
+            if evidence['eligible']:
+                self.reconcile_interrupted(owner, rid, retire_schedule=False)
             code, result = h._recover_run_decision(owner, rid)
             require(code < 400, code, result.get('detail', 'Recovery refused'))
             return result
@@ -339,6 +351,12 @@ class Service:
         handle = h._RUN_HANDLES.get((owner, rid))
         return handle is not None and not handle['task'].done()
 
+    def reconcile_interrupted(self, owner, rid, *, retire_schedule=True):
+        try:
+            return interrupted.reconcile(self, owner, rid, retire_schedule=retire_schedule)
+        except ValueError as exc:
+            raise ApiError(409, str(exc)) from exc
+
     def display_status(self, payload, rid=None):
         status = payload.get('status')
         if rid is not None:
@@ -351,7 +369,7 @@ class Service:
             if status == 'HALTED' and control.get('termination_status') == 'CONFIRMED':
                 return 'STOPPED'
             if status in ('RUNNING', 'READY') or control.get('termination_status') == 'REQUESTED':
-                return 'STOP_REQUESTED' if status != 'HALTED' else 'STOPPED'
+                return 'STOP_REQUESTED'
         return status
 
     def legacy_tokens(self, owner, rid):
@@ -373,7 +391,8 @@ class Service:
         meta = h._load_meta(owner, rid)
         base = h._run_base(owner, rid)
         try:
-            value = ex.reconcile(base, self.has_task(owner, rid))
+            evidence = interrupted.diagnostics(self, owner, rid)
+            value = ex.reconcile(base, self.has_task(owner, rid) or not evidence['owner_extinct'])
             value = value or lg.load(base)
         except ValueError:
             value = None
@@ -390,6 +409,7 @@ class Service:
         payload['ledger'] = lg.summary(value)
         payload['tokens'] = (value or {}).get('tokens') or (self.legacy_tokens(owner, rid) if protocol.get('legacy') else tokens.total([]))
         payload['active'] = self.has_task(owner, rid)
+        payload['reconciliation'] = interrupted.diagnostics(self, owner, rid)
         payload['order'] = [c['id'] for c in CORE['doc'].load_document(h._mag_path(owner, rid)).document['cartridges']]
         return payload
 
@@ -623,6 +643,9 @@ class Service:
         return cid, len(((value.get('cartridges') or {}).get(cid) or {}).get('attempts') or [])
 
     async def start(self, owner, rid, payload):
+        if payload.get('status') == 'RUNNING' and not (payload.get('execution') or {}).get('owner_alive'):
+            self.reconcile_interrupted(owner, rid, retire_schedule=False)
+            raise ApiError(409, 'Interrupted run reconciled to HALTED; review it and Prepare recovery before Start')
         interception = h._lost_runtime_interception(payload,owner,rid)
         if interception is not None and interception != 'same_runtime':
             require(interception['status_code'] < 400, interception['status_code'],interception.get('detail','Start refused'))

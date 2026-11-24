@@ -169,6 +169,23 @@ class Scheduler:
         if len(self.queue) != before:
             self._persist()
 
+    def reconcile_interrupted(self, rid, *, retain=False):
+        """Durably remove only an extinct owner's retained slot; never pump."""
+        entry = self.entry(rid)
+        if entry is not None and (entry is self.current or not entry.get('needs_start')):
+            raise SchedulerError('Scheduler still has a live slot for this run')
+        if retain:
+            self._persist()  # preserve explicit Start/recovery's existing queue order
+            return
+        before, notes = self.queue, self.notes
+        self.queue = [e for e in self.queue if e['run_id'] != rid]
+        self.notes = {k: v for k, v in self.notes.items() if k != rid}
+        try:
+            self._persist()  # also recheck persistence on an idempotent retry
+        except Exception:
+            self.queue, self.notes = before, notes
+            raise
+
     # ----------------------------------------------------------- dispatch
     async def pump(self):
         if self.closing or self.persistence_error:

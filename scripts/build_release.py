@@ -10,7 +10,7 @@ plugin=ROOT/'magazine-pi'
 VERSION=json.loads((plugin/'manifest.json').read_text())['version']
 for name in ('INSTALL.md','SECURITY.md','ACCEPTANCE.md','UI-STYLING.md','MODELS-AND-JSONL.md','SIMPLIFICATION.md',
              'COMPATIBILITY.md','TESTING.md','PI6-REPORT.md','PI7-SCHEDULER.md',
-             'UI8-OPERATOR-GUIDE.md','UI8-REPORT.md','UI8-ALIGNMENT.md','LINUX-STORAGE.md','IMPORT-REPAIR.md'):
+             'UI8-OPERATOR-GUIDE.md','UI8-REPORT.md','UI8-ALIGNMENT.md','LINUX-STORAGE.md','IMPORT-REPAIR.md','RESTART-RECOVERY.md'):
     (plugin/'docs').mkdir(exist_ok=True)
     shutil.copy2(ROOT/'docs'/name,plugin/'docs'/name)
 reuse=json.loads((plugin/'reused-components.json').read_text())
@@ -55,7 +55,9 @@ for directory in ('docs','scripts','tests'):
 # part of a normal plugin installation and are no longer distributed.
 source_entries=[('Magazine-Pi-'+VERSION+'/'+str(p.relative_to(ROOT)).replace('\\','/'),p) for p in source_files]
 compat=json.loads((plugin/'compatibility.json').read_text())
-manifest={'version':VERSION,'baseline':'Magazine-0.1.0-beta.5','core_files_unchanged':29,
+manifest={'version':VERSION,'baseline':'Magazine-0.1.0-beta.5','core_files_verified':len(reuse['core']),
+          'core_files_unchanged':len(reuse['core'])-len(reuse.get('pi_core_changes', {})),
+          'pi_core_changes':reuse.get('pi_core_changes', {}),
           'reference':'Nundrian/Magazine 09a8706 magazine_simple_reliability3.py + Magazine Simple 0.3.0-scheduler.rc1 (ZIP sha256 b2acaad4a27260b163b87d732fb38886c90623f72b249683efebab93cab81864)',
           'supported_pairs':[{k:p[k] for k in ('host','sdk','level')} for p in compat['pairs']],'archives':[
     build(f'Magazine-Pi-{VERSION}-plugin.zip',plugin_entries),

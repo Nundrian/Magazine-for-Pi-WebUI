@@ -189,7 +189,7 @@ const HTML=`<style>${STYLE}</style><main class="mag">
 <section><h2>3. Selected project</h2>
  <div data-id="run-summary"><p class="dim">Select a Magazine above to view its saved progress.</p></div>
  <div class="tok" data-id="token-counter" role="group" aria-labelledby="mag-tok-h" hidden><h3 id="mag-tok-h">Reported tokens</h3><dl><div><dt>Input tokens</dt><dd data-id="tok-input">—</dd></div><div><dt>Output tokens</dt><dd data-id="tok-output">—</dd></div><div><dt>Total tokens</dt><dd data-id="tok-total">—</dd></div></dl><p class="dim" data-id="tok-cache"></p><p class="dim" data-id="tok-note" role="status"></p></div>
- <div><button class="primary" data-id="start" disabled>Start workflow</button><button class="stop" data-id="stop" disabled>Stop workflow</button><button data-id="recover" disabled>Prepare recovery</button><button data-id="progress" disabled>Check progress</button><label class="inline" data-id="run-antiloop-box" hidden><input type="checkbox" data-id="run-antiloop"> Antiloop for this run</label></div>
+ <div><button class="primary" data-id="start" disabled>Start workflow</button><button class="stop" data-id="stop" disabled>Stop workflow</button><button data-id="reconcile" disabled>Reconcile interrupted run</button><button data-id="recover" disabled>Prepare recovery</button><button data-id="progress" disabled>Check progress</button><label class="inline" data-id="run-antiloop-box" hidden><input type="checkbox" data-id="run-antiloop"> Antiloop for this run</label></div>
  <div><button data-id="export" disabled>Export Finished Work</button><button data-id="download" disabled>Download results ZIP</button><button data-id="download-jsonl" disabled>Download Run JSONL</button></div>
  <p><small>STOP is permanent for a run that has started and is not a pause; for a run still waiting for its first turn, Stop removes it from the queue and leaves it READY. A failed run can be recovered to READY and started again within the five-attempt ceiling. After a restart, retained queue entries never resume by themselves: choose Start (after Prepare recovery when the run is HALTED). COMPLETED confirms execution and verified saved results, not real-world correctness.</small></p>
  <div class="row"><h2 class="shrink" style="margin:8px 0 0">Ledger</h2><label class="shrink">Filter<select data-id="ledger-filter"><option value="all">All cartridges</option><option value="done">Done</option><option value="running">Running</option><option value="failed">Failed</option><option value="halted">Halted</option><option value="stopped">Stopped</option><option value="interrupted">Interrupted</option><option value="pending">Pending</option></select></label></div>
@@ -564,11 +564,16 @@ export default {
       if(qd.note)lines.push(qd.note);
       if(r.control)lines.push(`STOP: ${r.control.termination_status||r.control.error} · cancellation ${r.control.cancellation_status||'unknown'}`);
       if(r.execution?.halt_reason)lines.push('Halt reason: '+r.execution.halt_reason);
+      if(r.reconciliation&&(!r.active&&r.status==='RUNNING'||r.execution?.halt_reason==='lost-owner')){
+        lines.push(r.reconciliation.detail);
+        lines.push('Inference cancellation: unconfirmed. External operation completion: unknown. Reconcile interrupted run halts Magazine without starting inference.');
+      }
       if(r.export)lines.push('Finished Work: '+r.export.status+' · '+(r.export.message||r.export.directory||''));
       const elapsed=(r.ledger?.cartridges||[]).reduce((n,c)=>n+(c.elapsed_seconds||0),0);
       q('mobile-run-facts').textContent=`Tokens ${r.tokens?.total==null?'—':Number(r.tokens.total).toLocaleString()}${r.tokens?.incomplete?' · partial':''} · Duration ${duration(elapsed,Boolean(r.active))}`;
       const detail=make('details',{},make('summary',{text:'Run details, models and execution evidence'}),...lines.map(t=>make('p',{cls:'dim',text:t})));
       q('run-summary').replaceChildren(head,make('p',{text:`${done} of ${total} steps finished${r.current_cartridge?` · current ${r.current_cartridge}`:''} · ${duration(elapsed,Boolean(r.active))}`}),make('progress',{cls:'run-progress',max:Math.max(total,1),value:done,'aria-label':'Verified workflow progress'}),detail);
+      if(r.status==='RUNNING'&&!r.active)q('run-summary').append(make('p',{text:r.reconciliation?.detail||'Execution ownership is uncertain. Inspect the recorded owner before recovery.'}));
       const tv=tokenCounter(r.tokens,status);q('token-counter').hidden=false;
       for(const k of ['input','output','total'])q('tok-'+k).textContent=tv[k];
       q('tok-cache').textContent=tv.cache;q('tok-cache').hidden=!tv.cache;
@@ -580,6 +585,8 @@ export default {
       q('stop').textContent=waitingFirst?'Remove from queue':'Stop workflow';
       q('recover').disabled=stopped||!(r.status==='HALTED'||(r.status==='READY'&&r.execution&&!r.execution.owner_alive));
       q('recover').title=stopped?'A STOPPED run is not resumable; prepare a new run instead.':'';
+      q('reconcile').disabled=!r.reconciliation?.eligible;
+      q('reconcile').title=r.reconciliation?.detail||'No interrupted execution is eligible for reconciliation';
       q('progress').disabled=false;q('export').disabled=!['COMPLETED','HALTED'].includes(r.status);q('download').disabled=q('export').disabled;q('download-jsonl').disabled=false;
       q('current-chat').disabled=false;
       const canToggle=r.status==='READY'&&!proto.legacy&&!proto.antiloop_frozen;q('run-antiloop-box').hidden=!canToggle;q('run-antiloop').checked=Boolean(proto.antiloop);
@@ -609,7 +616,7 @@ export default {
     async function selectRun(id,persist=true){
       selection++;ledgerRequest++;runId=id;fullLedger=null;ledgerHandovers={};ledgerId=store.get('magazine-pi-ledger-'+id);last=null;renderDashboard();q('current-chat').disabled=!id;q('run-header').hidden=!id;
       if(persist)await remember({run_id:id||null});
-      if(!id){q('token-counter').hidden=true;q('run-summary').replaceChildren(make('p',{cls:'dim',text:runs.length?'Select a Magazine above to view its saved progress.':'Prepare a workflow to begin.'}));q('ledger').replaceChildren();for(const b of ['start','stop','recover','progress','export','download','download-jsonl'])q(b).disabled=true;return;}
+      if(!id){q('token-counter').hidden=true;q('run-summary').replaceChildren(make('p',{cls:'dim',text:runs.length?'Select a Magazine above to view its saved progress.':'Prepare a workflow to begin.'}));q('ledger').replaceChildren();for(const b of ['start','stop','reconcile','recover','progress','export','download','download-jsonl'])q(b).disabled=true;return;}
       await progress(false);
     }
     async function refresh(){
@@ -663,8 +670,8 @@ export default {
       if(!preview.protocol?.declared_mode&&mode)data.handover_mode=mode;
       const run=await call('prepare',data);await loadRuns();await selectRun(run.run_id);message('Workflow READY. Review the prepared run, then choose Start workflow.');await showPanel('overview');
     });
-    for(const action of ['start','stop','recover','export'])button(action,async()=>{const result=await call(action,{run_id:runId});await loadRuns();await progress(false);
-      message(result.message||({start:result.status==='queued'?`Queued at position #${result.queue_position}.`:'Workflow started.',stop:'Stop request processed.',recover:'Recovery prepared. Choose Start to execute.',export:'Finished Work export checked.'}[action]));});
+    for(const action of ['start','stop','recover','export','reconcile'])button(action,async()=>{const result=await call(action,{run_id:runId});await loadRuns();await progress(false);
+      message(result.message||({start:result.status==='queued'?`Queued at position #${result.queue_position}.`:'Workflow started.',stop:'Stop request processed.',recover:'Recovery prepared. Choose Start to execute.',export:'Finished Work export checked.',reconcile:'Interrupted run reconciled. Nothing was started.'}[action]));});
     button('progress',async()=>{await progress();await loadRuns();});
     const download=async(action,type,text)=>{const file=await call(action,{run_id:runId});const bytes=Uint8Array.from(atob(file.file_data_b64),c=>c.charCodeAt(0));const url=URL.createObjectURL(new Blob([bytes],{type}));const link=make('a',{href:url,download:file.file_name});link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);message(text);};
     button('download',()=>download('download','application/zip','Results ZIP downloaded (includes the attempt ledger).'));

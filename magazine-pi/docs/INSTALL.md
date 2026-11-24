@@ -1,4 +1,4 @@
-# Install or update Magazine 0.1.0-pi.8-ui.3
+# Install or update Magazine 0.1.0-pi.8-ui.4
 
 Plugin ID: `magazine-pi`. This is the native Pi plugin, separate from Open WebUI
 Magazine and the older Magazine Simple for Pi plugin. The distributed ZIP contains
@@ -25,7 +25,7 @@ on an existing installation. Preserve and verify the old state first.
 
 ## Preserve data first
 
-Update only at an idle Magazine checkpoint: no active worker, queued work or
+For ordinary updates, use an idle Magazine checkpoint: no active worker, queued work or
 uncertain STOP. Back up the installed `plugins/magazine-pi` folder/config, the
 complete Pi data directory, and any external Magazine workspace. Preserve model
 providers, permissions, other plugins and original project files. Never use
@@ -38,7 +38,7 @@ manifest.json, index.mjs, client/ and the Python service files. For a Compose
 service called `pi-web-ui`, from the folder containing its Compose file:
 
 ```powershell
-Expand-Archive -LiteralPath .\Magazine-Pi-0.1.0-pi.8-ui.3-plugin.zip -DestinationPath .\package
+Expand-Archive -LiteralPath .\Magazine-Pi-0.1.0-pi.8-ui.4-plugin.zip -DestinationPath .\package
 $packagePath = (Resolve-Path .\package).Path
 docker compose stop pi-web-ui
 docker compose run --rm --no-deps --volume "${packagePath}:/opt/magazine-install:ro" pi-web-ui install /opt/magazine-install/magazine-pi --data-dir /app/.pi-web
@@ -67,7 +67,7 @@ this file outside shareable archives. For a named data volume, write the same
 configuration inside that volume rather than assuming a Windows `data` folder.
 
 Start with `docker compose up -d`, use Pi's native token sign-in, then open
-**Plugins → Magazine**. Confirm version 0.1.0-pi.8-ui.3. Native token, networking
+**Plugins → Magazine**. Confirm version 0.1.0-pi.8-ui.4. Native token, networking
 and model-provider setup remain Pi's responsibility; no extra login service is
 added by Magazine. An Ollama model must also appear in Pi's configured catalogue.
 
@@ -108,3 +108,12 @@ Restore needed trash items with this version before reverting to a UI without
 Restore. Restoring a full runtime backup discards subsequent work and must be a
 separate deliberate action. Do not start committed-result runs under a plugin
 that does not implement their protocol. Do not delete volumes/project folders.
+
+## Repairing an orphaned RUNNING installation
+
+For pi.8-ui.4 restart repair, back up the plugin/config and authoritative state
+volume first. Positively establish that the recorded owner is extinct and no
+SDK worker survives before replacing the plugin. A retained queue alone is not
+an active worker. Install this version without starting a workflow, then use
+[Reconcile interrupted run](RESTART-RECOVERY.md). Keep the run for inspection or
+delete it later through the normal confirmation interface.

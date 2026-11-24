@@ -57,7 +57,7 @@ from magazine.runtime_identity import (
     process_is_extinct,
 )
 from magazine.schema import ExecutionOwnershipError
-from magazine.state import STATUS_READY, STATUS_RUNNING
+from magazine.state import STATUS_HALTED, STATUS_READY, STATUS_RUNNING
 from magazine.state_store import load_run_state, save_run_state
 
 __all__ = [
@@ -633,7 +633,7 @@ def recover_lost_runtime(
     try:
         # Step 3b. Re-check the status under the lock (TOCTOU-safe).
         state = load_run_state(state_path)
-        if state.get("status") not in (STATUS_RUNNING, STATUS_READY) or (
+        if state.get("status") not in (STATUS_RUNNING, STATUS_READY, STATUS_HALTED) or (
             expected_status is not None and state["status"] != expected_status
         ):
             # Something else changed the run while we were not holding the lock.
@@ -652,6 +652,14 @@ def recover_lost_runtime(
         #           process_is_extinct returning False.
         if not process_is_extinct(claim_now.pid, claim_now.start_ticks):
             return RecoverOutcome("owner_live", state, claim_now)
+
+        # A crash can land the HALTED state before claim retirement or Stop
+        # settlement. Retry only that lost-owner transition, never an unrelated
+        # failure/operator retirement. Revalidate the exact claim under lock.
+        if state["status"] == STATUS_HALTED and claim_now.halt_reason not in (
+            None, HALT_REASON_LOST_OWNER,
+        ):
+            return RecoverOutcome("state_changed", state, claim_now)
 
         if state["status"] == STATUS_READY:
             # A previous READY retirement may have completed its atomic write
@@ -675,20 +683,26 @@ def recover_lost_runtime(
 
         # Step 3e. Halt: persist RUNNING -> HALTED (crash-consistency: the state
         #           commit is the first durable step).
-        halted = halt_uncertain_run(state)
-        save_run_state(state_path, halted)
+        halted = state
+        if state["status"] == STATUS_RUNNING:
+            halted = halt_uncertain_run(state)
+            save_run_state(state_path, halted)
 
         # Step 3f. Retire the claim (frozen replacement, preserving attempt and
         #           runtime_id) with the lost-owner reason.  Its failure MUST
         #           propagate so the run stays durably HALTED and the operator
         #           recovery path (:func:`persist_recover_halted`) stays retryable.
-        retired_claim = replace(
+        retired_claim = claim_now if claim_now.halt_reason == HALT_REASON_LOST_OWNER else replace(
             claim_now,
             halted_by=writer_identity.runtime_id,
             halted_at=utc_now_iso(),
             halt_reason=HALT_REASON_LOST_OWNER,
         )
         save_execution_metadata(exec_path, retired_claim)
+
+        # Owner loss is not evidence of provider cancellation. Resolve only a
+        # pending Stop as NOT_APPLIED; retain its actual cancellation evidence.
+        run_control._settle_not_applied_locked(state_path, "lost-owner")
 
         # Step 3g. Return the freshly persisted HALTED state and the retired
         #           claim.

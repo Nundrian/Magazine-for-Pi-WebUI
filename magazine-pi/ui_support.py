@@ -333,8 +333,22 @@ class Support:
         check(status in ('READY', 'COMPLETED', 'HALTED', 'STOPPED'), 'Run must be inactive before deletion', 409)
         execution = payload.get('execution') or {}
         control = payload.get('control') or {}
-        check((not control or control.get('termination_status') == 'CONFIRMED')
-              and not (status != 'COMPLETED' and execution and not execution.get('halted') and execution.get('owner_alive')),
+        lost_owner = execution.get('halt_reason') == 'lost-owner'
+        if lost_owner:
+            from interrupted import diagnostics
+            evidence = diagnostics(s, owner, rid)
+            try:
+                receipt = read_json(s.root/'runs'/owner/rid, 'reconciliation.json')
+            except FileNotFoundError:
+                receipt = {}
+            check(evidence['eligible'] and receipt.get('execution_attempt') == execution.get('attempt')
+                  and receipt.get('runtime_id') == execution.get('runtime_id'),
+                  'Reconcile interrupted run before deletion', 409)
+        check((not control or control.get('termination_status') == 'CONFIRMED'
+               or (lost_owner and control.get('termination_status') == 'NOT_APPLIED'
+                   and control.get('termination_method') == 'lost-owner'))
+              and not (status != 'COMPLETED' and execution and not execution.get('halted')
+                       and not execution.get('owner_extinct')),
               'Worker termination is not confirmed', 409)
         try:
             ledger = read_json(s.root/'runs'/owner/rid, 'ledger.json')

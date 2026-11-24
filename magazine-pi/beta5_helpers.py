@@ -1063,6 +1063,9 @@ def _status_payload(owner_id, rid):
                 "attempt": claim.attempt,
                 "runtime_id": claim.runtime_id,
                 "owner_alive": claim.runtime_id == cur,
+                "owner_extinct": m["ri"].process_is_extinct(claim.pid, claim.start_ticks),
+                "pid": claim.pid,
+                "start_ticks": claim.start_ticks,
                 "halted": claim.halted_by is not None,
                 "halt_reason": claim.halt_reason,
             }
@@ -1338,17 +1341,17 @@ async def _stop_run_decision(owner_id, rid):
     if claim is None:
         return 409, {"detail": "Run has no active execution to stop"}
     if claim.runtime_id != identity.runtime_id:
-        if isinstance(existing, dict) and existing.get("request") == "STOP":
+        if payload.get("status") == "RUNNING":
             outcome = m["racton"].recover_lost_runtime(
                 _state_path(owner_id, rid), _lock_path(owner_id, rid), owner_id,
                 identity.runtime_id, identity.pid, identity.start_ticks,
                 expected_status="RUNNING",
             )
             if outcome.outcome == "halted":
-                return 202, {
+                return 200, {
                     "run_id": rid,
-                    "status": "stop_requested",
-                    "control": existing,
+                    "status": "reconciled",
+                    "control": (_status_payload(owner_id, rid) or {}).get("control"),
                     "message": ("The restarted Magazine process durably halted "
                                 "the run, but cancellation of any previously "
                                 "active inference could not be confirmed"),

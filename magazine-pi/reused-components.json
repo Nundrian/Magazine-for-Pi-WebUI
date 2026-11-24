@@ -12,7 +12,7 @@
     "package.py": "aceb8886ae23de420432803900f34100a482501a2dd9317886b5ca7dd49c5f41",
     "paths.py": "22da47b3757b8843313e6ee299d1b05e4294699e8144598380fc5a3406be752c",
     "recovery.py": "73547271f2b1f1cbd19e52a3dd7fa56e6addfba2d9f183937ee8663a9b28cec9",
-    "recovery_action.py": "36d1832fd63057609f957a8509a76d1920f525f14953e24d1ce7cbffcfe8f3b3",
+    "recovery_action.py": "649d5a791046a83adbe00591487e1f67d01ad5e8a7c76b63efe62616be98b7f0",
     "recovery_transition.py": "d70c5e06ceb331c36e04091f7762ae7fa1ca6774e3ddc0de9474b35936c4aacc",
     "result_store.py": "74f383517c4ecb6bacd13d9ec405cba739236b08739f9fb4ab147eff3ae40003",
     "routing.py": "0653568badaedc9141a773b79d32fa218f9afd9340492dddfca2d79e27ecf16c",
@@ -393,7 +393,7 @@
       "sha256": "c77eb0e4ee8e46503f2755cd2371683dad10026217b81f2de6fe5bf5e28392cc"
     }
   ],
-  "helper_sha256": "7e85f34bccd792c30dcc927a109c3ae8a2d6d85b23d0c518f486cdedfd5f8004",
+  "helper_sha256": "20f2aec30fa104ac61a581b230fd80392b94e65b74fd4e4968f27825ed47de70",
   "pi6_adaptation": {
     "source_repository": "https://github.com/Nundrian/Magazine",
     "source_commit": "09a8706e5f01fe6d8db0b8941ccf0d772b374005",
@@ -475,6 +475,13 @@
   "original_helper_sha256": "8d3597c8b15ff23ab101fd49d73f0b830a546e5cfe61481221c0ff482d0fb9c3",
   "pi_helper_changes": [
     "Typed publication errno and server-only filesystem diagnostics",
-    "Export fallback based on captured unsupported error, never stale ctypes errno"
-  ]
+    "Export fallback based on captured unsupported error, never stale ctypes errno",
+    "Expose process-incarnation evidence and reconcile extinct RUNNING owners without requiring an existing STOP"
+  ],
+  "pi_core_changes": {
+    "recovery_action.py": {
+      "previous_sha256": "36d1832fd63057609f957a8509a76d1920f525f14953e24d1ce7cbffcfe8f3b3",
+      "reason": "Retry fenced lost-owner HALTED persistence and settle pending STOP without inventing cancellation"
+    }
+  }
 }

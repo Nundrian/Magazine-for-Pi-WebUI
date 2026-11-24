@@ -1,5 +1,10 @@
 # Magazine 0.1.0-pi.8-ui.2 operator guide
 
+For current instructions with screenshots, use the [seven-tab visual guide](VISUAL-GUIDE.md)
+and [technical guide](TECHNICAL-GUIDE.md). This older guide retains historical
+candidate/deployment notes below; they are not the current installation status.
+The [import repair record](IMPORT-REPAIR.md) documents current acceptance.
+
 For this release, see [UI8-ALIGNMENT.md](UI8-ALIGNMENT.md): choose a workflow,
 click **Load your workflow**, review models/tools, then **Prepare workflow**.
 Preparation opens its READY run in Overview; **Start workflow** remains explicit.
@@ -164,3 +169,11 @@ procedure. Keep runtime data and trash; the old UI cannot restore trash, so rest
 needed items with this candidate first. Restore a runtime backup only as an
 explicit coordinated rollback because it discards subsequent changes. Do not
 roll back to pi.5 and start committed-result runs. Keep Magazine Simple untouched.
+
+## Interrupted runs after restart (pi.8-ui.4)
+
+Use **Reconcile interrupted run** when a RUNNING run has a positively extinct
+owner. This halts Magazine and makes eligible saved work deletable; it starts
+no inference. Provider cancellation and external tool completion remain
+unconfirmed. See [restart recovery](RESTART-RECOVERY.md) for diagnostics and
+recovery/deletion details.
