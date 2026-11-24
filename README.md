@@ -61,6 +61,14 @@ Review the deliverables and use real task-specific tests.
 
 **[Technical guide: execution, checks, handovers and safeguards →](docs/TECHNICAL-GUIDE.md)**
 
+## Development status — 24 November 2026
+
+A newer local development build, **0.1.0-pi.9.1**, has been reported after a reliability audit. It adds worker confinement, controller-integrity checks, emergency Stop and explicit damaged-state repair, restore-point management, model-error classification and optional required-path preflight. A follow-up fix addresses Docker Desktop filesystem compatibility.
+
+The local report records 984 passing Python tests (one skipped), 13 passing Node tests and live non-inference checks. Real-model execution under the new sandbox remains unverified. The pi.9.1 source has not yet been synchronised to this repository; these changes are not included in the public source version below.
+
+**[Development roadmap and outstanding work](TODO.md)** — priorities, known limitations, acceptance requirements and the reported local changes.
+
 ## Install and compatibility
 
 Current source version: **0.1.0-pi.8-ui.5**, including automatic Ollama model
