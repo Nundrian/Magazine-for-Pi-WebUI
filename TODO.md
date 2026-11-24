@@ -16,6 +16,14 @@ current public checkout.
   Node tests passed, package verification and live non-inference boundary probes.
 - Production model execution under the new sandbox has not yet been validated.
 
+## Recovered source archive — independent checks
+
+- [x] Recovered the exact pi.9.1 source and plugin archives. Both SHA-256 values match the local release report; both ZIP CRC checks pass.
+- [x] Verified byte-for-byte parity for all 79 plugin files against the 194-file source archive.
+- [x] Independently ran restore-point tests: 10 passed.
+- [ ] Repeat the sandbox tests in a Landlock-capable target environment. An independent partial test run passed 14 tests before stopping at a sandbox test because Landlock is unavailable in the review environment. This does not reproduce or invalidate the reported Docker Desktop results.
+- [ ] Finish the source comparison, independent code audit and actual publication. Archive verification alone is not a completed source synchronisation.
+
 ## P0 — Before another unattended production run
 
 - [ ] Import the authoritative pi.9.1 source, compare with current main, preserve
