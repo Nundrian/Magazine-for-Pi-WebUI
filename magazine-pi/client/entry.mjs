@@ -635,7 +635,7 @@ export default {
     }
     async function refreshCatalogue(){
       if(closed||catalogueBusy)return;catalogueBusy=true;
-      try{const models=await call('catalogue');if(!closed)applyCatalogue(models);}
+      try{const models=await call('catalogue');if(!closed)applyCatalogue({...models,tools:models.tools.length?models.tools:cat.tools});}
       catch{if(!closed){applyCatalogue({...cat,models:cat.models.filter(m=>m.provider!=='ollama')});q('catalogue-status').textContent='Model catalogue refresh failed. Ollama models are unavailable; retrying automatically.';}}
       finally{catalogueBusy=false;}
     }
