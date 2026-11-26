@@ -7,9 +7,37 @@ code and documentation, not private config, saved runs, models or credentials.
 ## Requirements
 
 Use a Linux backend, including Docker Desktop Linux containers on Windows.
-Current UI acceptance is Pi WebUI **0.120.0 / SDK 1.5.2**. Inherited allowed pairs
-are 0.96.1/1.0.2 and 0.115.0/1.1.0. Check the actual SDK resolved by the host after
-any rebuild; do not override the exact compatibility guard merely to activate.
+
+**Pin Pi WebUI 0.120.0 and Pi SDK 1.5.2** (`@earendil-works/pi-coding-agent`)
+for the recommended deployment. The exact pair matters: the SDK actually
+resolved by Pi may change during an install or rebuild even if the WebUI
+version is unchanged.
+
+The public pi.8-ui.5 compatibility matrix also lists historical pairs
+0.96.1/1.0.2 (earlier live acceptance) and 0.115.0/1.1.0 (offline-verified).
+These are not the current development acceptance baseline. Newer confined-worker
+development candidates, including pi.10.4, rely on SDK 1.5.2's verified shell-tool
+prefix behaviour when sandboxed bash is enabled. Pi WebUI 0.122.0 / SDK 1.6.1
+failed worker-integrity checks in local candidate testing; it is not a supported
+upgrade for that candidate. Do not treat a compatibility override as proof of
+worker safety or bypass the worker checks.
+
+For a global npm Docker installation, run these read-only checks from PowerShell
+(substitute your actual Pi container name):
+
+```powershell
+$container = 'pi-web-ui'
+docker exec $container pi-web-ui --version
+docker exec $container node -p "require('/usr/local/lib/node_modules/pi-web-ui/node_modules/@earendil-works/pi-coding-agent/package.json').version"
+docker exec $container python3 --version
+```
+
+Expected versions: `0.120.0`, `1.5.2` and Python `3.11.x`. If the SDK package
+is installed elsewhere, check the version resolved by the running Pi host rather
+than an unrelated global SDK. Verify again after any Pi update or rebuild.
+If the pair differs, use a verified compatible deployment or wait for explicit
+support in Magazine. Do not override the exact compatibility guard merely to
+activate the plugin.
 
 Magazine requires Python 3.11, `httpx==0.28.1` and `PyYAML==6.0.3`. The standard
 upstream Docker runtime has no Python; add a Python virtual environment in an
