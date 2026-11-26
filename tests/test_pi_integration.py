@@ -158,7 +158,8 @@ def test_sequential_routing_context_persistence_export(setup):
         assert 'FORBIDDEN_' not in json.dumps(req)
         assert not req.get('tools')
     owner='local'
-    sessions=list((rpc.root/'runs'/owner/rid/'sessions').glob('*.jsonl'))
+    # pi.9: each attempt's session lives in its own folder (the sandbox grants only that folder).
+    sessions=list((rpc.root/'runs'/owner/rid/'sessions').glob('*/*.jsonl'))
     assert len(sessions)==2
     assert len({json.loads(p.read_text().splitlines()[0])['id'] for p in sessions})==2
     records = run_jsonl(rpc, key, rid)
@@ -166,7 +167,7 @@ def test_sequential_routing_context_persistence_export(setup):
     assert {r['cartridge_id'] for r in events} == {'c1', 'c2'}
     for session in sessions:
         persisted = [json.loads(line) for line in session.read_text().splitlines()]
-        exported = [r['record'] for r in events if r['source'] == 'sessions/' + session.name]
+        exported = [r['record'] for r in events if r['source'] == 'sessions/' + session.parent.name + '/' + session.name]
         assert exported == persisted
     archive=rpc.call('download',{'run_id':rid},key)
     with zipfile.ZipFile(io.BytesIO(base64.b64decode(archive['file_data_b64']))) as z:

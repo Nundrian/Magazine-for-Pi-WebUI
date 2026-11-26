@@ -216,7 +216,9 @@ class Support:
                     # Only original managed sessions, never a caller path or an
                     # unvalidated handover/archive path, are selectable here.
                     if rel:
-                        check(len(PurePosixPath(rel).parts) == 2 and PurePosixPath(rel).parts[0] == 'sessions', 'Session outside managed session store', 409)
+                        parts = PurePosixPath(rel).parts
+                        check(parts[0] == 'sessions' and (len(parts) == 2 or (len(parts) == 3 and re.fullmatch(r'[a-f0-9]{32}', parts[1]))),
+                              'Session outside managed session store', 409)
                         used.add(rel)
                     identity = '\0'.join((rid, cid, str(attempt.get('attempt_id', number)), rel or ''))
                     row = {'chat_id': hashlib.sha256(identity.encode()).hexdigest(), 'run_id': rid,
@@ -472,6 +474,7 @@ class Support:
         check(not ({'owner', 'path'} & set(data)), 'Client paths/owners are not accepted')
         s = self.service
         base = s.root/'trash'/token
+        check(not (base/'deleting.json').exists(), 'This restore point is being permanently deleted; it cannot be restored', 409)
         record = self._trash_record(base)
         kind, ident, owner = record.get('kind'), record.get('id'), record.get('owner')
         check(kind in ('run', 'template') and isinstance(ident, str), 'Invalid trash record', 409)
@@ -518,4 +521,8 @@ class Support:
                     with directory(parent) as pf:
                         os.rename(name, label, src_dir_fd=pf, dst_dir_fd=tf)
                 raise
+        try:
+            os.rmdir(base)  # the emptied transaction folder is not a restore point
+        except OSError:
+            pass
         return {'restored': True, 'id': ident, 'message': 'Saved work restored; nothing was started.'}

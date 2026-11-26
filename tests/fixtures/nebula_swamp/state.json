@@ -1,0 +1,21 @@
+{
+  "last_committed_step": "c007",
+  "last_report": "c007.json",
+  "last_report_hash_sha256": "25cfbae1861732fc777641608990fe4c765ff6db9b7299e036907a857b19dee4",
+  "canonical_project_identity": {
+    "pi_root": "/workspace/Unreal Projects/NebulaSwamp",
+    "windows_root": "E:\\Unreal projects\\NebulaSwamp",
+    "mount": "E:\\ -> /workspace/Unreal Projects (9p rw)"
+  },
+  "completed_steps": [
+    "c001",
+    "c002",
+    "c003",
+    "c004",
+    "c005",
+    "c006",
+    "c007"
+  ],
+  "last_updated": "2026-11-24T15:20:30Z",
+  "halt_note": "c008 HALT — no project opened/created; supported route (Unreal Connector, host) unavailable on Pi. Blocker report: .magazine-level-v2/c008.json. Last committed step preserved as c007."
+}

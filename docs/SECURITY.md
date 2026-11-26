@@ -28,11 +28,21 @@ Inputs and model output remain untrusted content, never authority to configure P
 Workers use explicit selected models, fresh saved SDK sessions and only selected
 allowed tools. No model-specific default or silent substitution exists. Global/
 project context discovery remains disabled; reviewed worker extensions are optional.
-SDK tool selection is a capability allowlist, not an OS sandbox. Tools run with
-the Pi process's OS authority and do not inherit the current chat's private
-permission preset, UI-plugin guards or approval rules. No tools/extensions are
-exposed by default. Existing operator allowlists remain unchanged. Use suitable
-host filesystem/container permissions for untrusted jobs, not Magazine keys.
+
+**Since 0.1.0-pi.9 every worker runs in a kernel-enforced sandbox** (Linux Landlock
+filesystem rules plus a seccomp filter), applied before Node starts and inherited
+by every tool and subprocess. Workers can change only the project workspace, their
+own attempt files, private scratch folders and operator-listed `workerWritePaths`;
+model shell commands run in a further nested domain without access to the attempt's
+session/publication folders or the worker's channel to Magazine. Magazine's state,
+Pi's data directory (plugins, configuration, MCP settings, secrets) and the agent
+directory are neither readable nor writable; workers get copies of the model
+configuration and an allow-listed environment without `PI_WEB_*`. UNIX-socket
+creation is refused so Pi's control socket cannot hand out the host token. A
+controller-integrity fence independently verifies Magazine's files and permissions
+after every attempt. Not covered: network access (kernel ABI 3), signals to
+same-user processes, and permission/timestamp changes (detected and repaired by
+Magazine, not prevented). See [PI9-RELIABILITY.md](PI9-RELIABILITY.md).
 
 JSONL is a read-only export of retained sessions and canonical records, not a
 fabricated lifecycle journal. Existing credential-field/bearer/assignment/URL
@@ -58,9 +68,10 @@ data and credentials. GitHub publication requires a separate user decision.
   accepts a result only if it matches that receipt, the expected run/cartridge/attempt/session
   identities and every declared selector. It then commits a copy, archives the session and
   writes a commit marker, and re-verifies all three before any dependent cartridge.
-- These checks detect accidental, partial or out-of-band writes. **They are not
-  protection against an adversarial model that has shell or write tools**, because those
-  tools run as the same OS user as Magazine. A tool allowlist is not a sandbox.
+- These checks detect accidental, partial or out-of-band writes. Before pi.9 they were
+  not protection against a model with shell or write tools; pi.9 adds the kernel
+  sandbox described above: shell commands cannot write any attempt's publication or
+  session folder, open controller files, or reach the worker's channel to Magazine.
 - Tool IDs must be plain names: SDK pattern syntax (`*`, `+x`, `-x`) and the reserved
   publisher name are refused. The active tool set is verified for every attempt, and MCP
   servers are not started.

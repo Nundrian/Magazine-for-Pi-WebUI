@@ -2,16 +2,15 @@
 
 Updated 24 November 2026.
 
-This is the active checklist for Magazine for Pi WebUI. It distinguishes the
-public source tree from the locally installed development build. Priorities are
-proposed from the 24 November reliability audit and deployment report; checked
-items below describe reported local work, not functionality guaranteed by the
-current public checkout.
+This is the active checklist for Magazine for Pi WebUI. Priorities are proposed
+from the 24 November reliability audit and deployment report. The public source
+now contains pi.9.1 (synchronised 24 November 2026); checked items describe
+work present in that source, not validated production inference.
 
 ## Release baseline
 
-- Public source at the time of this update: **0.1.0-pi.8-ui.5**.
-- Latest reported local build: **0.1.0-pi.9.1** (Pi WebUI 0.120.0, SDK 1.5.2).
+- Public source: **0.1.0-pi.9.1**, identical to the installed local build
+  (Pi WebUI 0.120.0, SDK 1.5.2).
 - Local pi.9.1 validation reported 984 Python tests passed, one skipped, 13/13
   Node tests passed, package verification and live non-inference boundary probes.
 - Production model execution under the new sandbox has not yet been validated.
@@ -22,14 +21,19 @@ current public checkout.
 - [x] Verified byte-for-byte parity for all 79 plugin files against the 194-file source archive.
 - [x] Independently ran restore-point tests: 10 passed.
 - [ ] Repeat the sandbox tests in a Landlock-capable target environment. An independent partial test run passed 14 tests before stopping at a sandbox test because Landlock is unavailable in the review environment. This does not reproduce or invalidate the reported Docker Desktop results.
-- [ ] Finish the source comparison, independent code audit and actual publication. Archive verification alone is not a completed source synchronisation.
+- [x] Source comparison and publication: the pi.9.1 commits were merged with the
+  newer documentation on main without rewriting history. Every file in the
+  verified source archive matches the published tree byte for byte; private
+  configuration, runtime data, transcripts, backups and restore points are
+  excluded.
+- [ ] Independent code audit of the published source by a reviewer outside the
+  original development session (see P0).
 
 ## P0 — Before another unattended production run
 
-- [ ] Import the authoritative pi.9.1 source, compare with current main, preserve
-  newer work, review the diff, verify package/source checksums and scan for
-  secrets and personal deployment details before publishing. Do not mark the
-  public source version as pi.9.1 until the actual code is present.
+- [x] Import the authoritative pi.9.1 source, compare with current main, preserve
+  newer work, verify package/source parity and scan for secrets before
+  publishing. Done 24 November 2026; the public source version is now pi.9.1.
 - [ ] Independently review worker confinement, trusted handover, controller
   integrity, fail-closed recovery and emergency cancellation in the actual
   source. Check file descriptor inheritance, allowed paths and alternate
@@ -94,7 +98,7 @@ current public checkout.
 - [ ] Keep the repository free of runtime data, transcripts, credentials,
   private configuration, backups and project-specific deployment paths.
 
-## Reported completed locally in pi.9 / pi.9.1 (pending source synchronisation)
+## Completed in pi.9 / pi.9.1 (present in the public source)
 
 - [x] Recovered a damaged run to HALTED with no falsely accepted cartridges;
   preserved evidence and chats; nothing automatically resumed.

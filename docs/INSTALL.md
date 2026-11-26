@@ -1,4 +1,4 @@
-# Install or update Magazine 0.1.0-pi.8-ui.5
+# Install or update Magazine 0.1.0-pi.9.1
 
 Plugin ID: `magazine-pi`. This is the native Pi plugin, separate from Open WebUI
 Magazine and the older Magazine Simple for Pi plugin. The distributed ZIP contains
@@ -7,37 +7,9 @@ code and documentation, not private config, saved runs, models or credentials.
 ## Requirements
 
 Use a Linux backend, including Docker Desktop Linux containers on Windows.
-
-**Pin Pi WebUI 0.120.0 and Pi SDK 1.5.2** (`@earendil-works/pi-coding-agent`)
-for the recommended deployment. The exact pair matters: the SDK actually
-resolved by Pi may change during an install or rebuild even if the WebUI
-version is unchanged.
-
-The public pi.8-ui.5 compatibility matrix also lists historical pairs
-0.96.1/1.0.2 (earlier live acceptance) and 0.115.0/1.1.0 (offline-verified).
-These are not the current development acceptance baseline. Newer confined-worker
-development candidates, including pi.10.4, rely on SDK 1.5.2's verified shell-tool
-prefix behaviour when sandboxed bash is enabled. Pi WebUI 0.122.0 / SDK 1.6.1
-failed worker-integrity checks in local candidate testing; it is not a supported
-upgrade for that candidate. Do not treat a compatibility override as proof of
-worker safety or bypass the worker checks.
-
-For a global npm Docker installation, run these read-only checks from PowerShell
-(substitute your actual Pi container name):
-
-```powershell
-$container = 'pi-web-ui'
-docker exec $container pi-web-ui --version
-docker exec $container node -p "require('/usr/local/lib/node_modules/pi-web-ui/node_modules/@earendil-works/pi-coding-agent/package.json').version"
-docker exec $container python3 --version
-```
-
-Expected versions: `0.120.0`, `1.5.2` and Python `3.11.x`. If the SDK package
-is installed elsewhere, check the version resolved by the running Pi host rather
-than an unrelated global SDK. Verify again after any Pi update or rebuild.
-If the pair differs, use a verified compatible deployment or wait for explicit
-support in Magazine. Do not override the exact compatibility guard merely to
-activate the plugin.
+Current UI acceptance is Pi WebUI **0.120.0 / SDK 1.5.2**. Inherited allowed pairs
+are 0.96.1/1.0.2 and 0.115.0/1.1.0. Check the actual SDK resolved by the host after
+any rebuild; do not override the exact compatibility guard merely to activate.
 
 Magazine requires Python 3.11, `httpx==0.28.1` and `PyYAML==6.0.3`. The standard
 upstream Docker runtime has no Python; add a Python virtual environment in an
@@ -66,7 +38,7 @@ manifest.json, index.mjs, client/ and the Python service files. For a Compose
 service called `pi-web-ui`, from the folder containing its Compose file:
 
 ```powershell
-Expand-Archive -LiteralPath .\Magazine-Pi-0.1.0-pi.8-ui.5-plugin.zip -DestinationPath .\package
+Expand-Archive -LiteralPath .\Magazine-Pi-0.1.0-pi.9.1-plugin.zip -DestinationPath .\package
 $packagePath = (Resolve-Path .\package).Path
 docker compose stop pi-web-ui
 docker compose run --rm --no-deps --volume "${packagePath}:/opt/magazine-install:ro" pi-web-ui install /opt/magazine-install/magazine-pi --data-dir /app/.pi-web
@@ -91,11 +63,23 @@ bind mounts, create `data/plugins/magazine-pi/config.json` with:
 ```
 
 These are example container paths. Select only needed tools per workflow. Keep
-this file outside shareable archives. For a named data volume, write the same
+this file outside shareable archives.
+
+Workers are confined by the kernel (Linux Landlock plus a small seccomp filter;
+see [PI9-RELIABILITY.md](PI9-RELIABILITY.md)). They can change only `workspace`,
+their own attempt files and any folder listed in `workerWritePaths`. If a
+workflow's project lives in another mounted folder, list its container path there:
+
+```json
+{ "workerWritePaths": ["/projects/NebulaSwamp"] }
+```
+
+`workerSandbox` defaults to `"required"`: a worker that cannot be confined is not
+started. `"off"` is an explicit, unsafe opt-out. Check **Manage → Worker isolation**. For a named data volume, write the same
 configuration inside that volume rather than assuming a Windows `data` folder.
 
 Start with `docker compose up -d`, use Pi's native token sign-in, then open
-**Plugins → Magazine**. Confirm version 0.1.0-pi.8-ui.5. Native token, networking
+**Plugins → Magazine**. Confirm version 0.1.0-pi.9.1. Native token, networking
 and model-provider setup remain Pi's responsibility; no extra login service is
 added by Magazine. An Ollama model must also appear in Pi's configured catalogue.
 
@@ -136,6 +120,32 @@ Restore needed trash items with this version before reverting to a UI without
 Restore. Restoring a full runtime backup discards subsequent work and must be a
 separate deliberate action. Do not start committed-result runs under a plugin
 that does not implement their protocol. Do not delete volumes/project folders.
+
+## Exposing a Windows project folder to workers
+
+Workers see only container paths. To give a workflow a Windows folder such as
+`E:\3D-Library\Projects\NebulaSwamp`, add one bind mount to the service in the
+existing Compose file (Docker Desktop shares Windows drives by default):
+
+```yaml
+      - type: bind
+        source: 'E:\3D-Library\Projects\NebulaSwamp'
+        target: /projects/NebulaSwamp
+        bind:
+          create_host_path: false
+```
+
+`create_host_path: false` makes a missing folder an error instead of silently
+creating an empty one. Recreate only that service at idle (`docker compose up -d
+--no-deps pi-web-ui`), add `"/projects/NebulaSwamp"` to `workerWritePaths`, and
+declare `required_paths: ['/projects/NebulaSwamp']` in the workflow so Start is
+refused if the mount is missing.
+
+## Repairing a run whose state is damaged
+
+See [PI9-RELIABILITY.md §3-4](PI9-RELIABILITY.md): Stop stays available; Repair
+state keeps the damaged file and rebuilds a HALTED state from verified records
+without starting anything.
 
 ## Repairing an orphaned RUNNING installation
 

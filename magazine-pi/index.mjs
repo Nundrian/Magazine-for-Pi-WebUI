@@ -118,6 +118,11 @@ export default {
       ...(Number.isInteger(local.timeoutSeconds) && local.timeoutSeconds>0 ? {timeoutSeconds:local.timeoutSeconds} : {}),
       extensionPaths:local.workerExtensionPaths || [],
       allowedTools:local.allowedTools || [],
+      // Kernel-enforced worker confinement (Linux Landlock). "required" refuses
+      // to start a worker that cannot be confined; "off" is an explicit opt-out.
+      workerSandbox:local.workerSandbox || 'required',
+      workerReadPaths:local.workerReadPaths || [],workerWritePaths:local.workerWritePaths || [],
+      piDataDir:host.dataDir,
       sdkDir:sdk.dir,sdkVersion:sdk.version,sdkOverride:compatibility.override,compatibility};
     const root=path.join(host.dataDir,'magazine');
     bridge=new ServiceBridge(host.dir,root,config,host.log.bind(host));

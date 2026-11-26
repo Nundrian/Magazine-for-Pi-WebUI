@@ -24,6 +24,33 @@ from magazine import paths as core_paths
 from magazine.schema import MagazineSchemaError
 
 PROTOCOL_VERSION = 1
+# pi.10: runs that declare host dependencies or project checkpoints are recorded as version 2, so an older
+# Magazine refuses to resume them instead of silently running without the checkpoint gate.
+PROTOCOL_VERSION_EXTENDED = 2
+PROTOCOL_VERSION_TRANSACTIONS = 3
+KNOWN_PROTOCOL_VERSIONS = (PROTOCOL_VERSION, PROTOCOL_VERSION_EXTENDED, PROTOCOL_VERSION_TRANSACTIONS)
+
+
+def protocol_version(protocol):
+    return PROTOCOL_VERSION_TRANSACTIONS if (protocol.get("requires") or protocol.get("project_checkpoint")) else PROTOCOL_VERSION
+
+
+def validate_saved_extensions(value, cartridge_ids):
+    """Validate extended declarations also when reopening persisted runs."""
+    import checkpoint
+    import host_tools
+
+    declaration = value.get("project_checkpoint")
+    requires = value.get("requires")
+    if declaration is not None:
+        if value.get("handover_mode") != "result_file_v1" or value.get("version") == PROTOCOL_VERSION:
+            raise ProtocolError("project_checkpoint needs the extended result_file_v1 protocol")
+        value["project_checkpoint"] = checkpoint.parse_declaration(declaration, cartridge_ids)
+    if requires:
+        if value.get("version") == PROTOCOL_VERSION:
+            raise ProtocolError("Host dependencies require the extended protocol")
+        value["requires"] = host_tools.parse_saved_requires(requires, value.get("version") == PROTOCOL_VERSION_EXTENDED)
+    return value
 HANDOVER_MODES = ("result_file_v1", "legacy_text")
 MODE_ALIASES = {"legacy_chat": "legacy_text"}
 DEFAULT_HANDOVER_MODE = "result_file_v1"
@@ -36,7 +63,7 @@ DONE_INSTRUCTION = ("When this step is finished:\n"
                     "A reply that ends without one of these lines is treated as unfinished.")
 SAFE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,95}\Z")
 TOP_FIELDS = {"schema_version", "name", "cartridges", "handover_mode", "result_profile",
-              "recovery", "loop_police"}
+              "recovery", "loop_police", "required_paths", "requires", "project_checkpoint"}
 CARTRIDGE_FIELDS = {"id", "model", "job_type", "prompt_file", "prompt", "handover",
                     "artifacts", "retry_safe", "constraints"}
 IGNORED_FIELDS = {"constraints"}  # accepted by Magazine Simple and ignored there too
@@ -242,16 +269,75 @@ def parse_manifest(root):
                 "recovery": recovery_policy(data.get("recovery")),
                 "loop_police": loop_policy(data.get("loop_police")),
                 "cartridges": declarations, "ignored_fields": ignored,
-                "extended_manifest": extended}
+                "extended_manifest": extended,
+                "required_paths": required_paths(data.get("required_paths"))}
+    # pi.10: optional host-application dependencies and deterministic project checkpoints. Absent in
+    # ordinary workflows, whose protocol records are unchanged.
+    if data.get("requires") is not None:
+        import host_tools
+        try:
+            protocol["requires"] = host_tools.parse_requires(data["requires"])
+        except ValueError as exc:
+            raise ProtocolError(str(exc)) from None
+    if data.get("project_checkpoint") is not None:
+        import checkpoint
+        try:
+            protocol["project_checkpoint"] = checkpoint.parse_declaration(
+                data["project_checkpoint"], [c["id"] for c in cartridges])
+        except ValueError as exc:
+            raise ProtocolError(str(exc)) from None
+        if mode != "result_file_v1":
+            raise ProtocolError("project_checkpoint needs handover_mode result_file_v1")
     if mode == "legacy_text" and any(d["handover"] or d["inputs"] or d["outputs"] for d in declarations.values()):
         raise ProtocolError("legacy_text workflows cannot declare committed handovers or artifacts; use result_file_v1")
     return document, protocol, name
 
 
+WINDOWS_PATH = re.compile(r"(?<![A-Za-z0-9])[A-Za-z]:\\[^\s`'\"<>|*?]+")
+
+
+def required_paths(value):
+    """Optional workflow preflight: absolute container paths that must exist."""
+    if value is None:
+        return []
+    if not isinstance(value, list) or len(value) > 32:
+        raise ProtocolError("required_paths must be a list of at most 32 absolute container paths")
+    out = []
+    for item in value:
+        if not isinstance(item, str) or not item.startswith("/") or len(item) > 1024 or "\0" in item \
+                or any(part == ".." for part in item.split("/")):
+            raise ProtocolError("required_paths entries must be absolute container paths such as /projects/MyProject")
+        if item not in out:
+            out.append(item)
+    return out
+
+
+def check_required_paths(paths):
+    """Missing or non-directory required paths, as operator-readable problems."""
+    import os
+    problems = []
+    for item in paths or []:
+        if not os.path.isdir(item):
+            problems.append(f"{item} is not available inside the Pi container" if not os.path.exists(item)
+                            else f"{item} exists but is not a folder")
+    return problems
+
+
+def windows_path_hints(document):
+    """Windows drive paths named in prompts (informational; never blocks)."""
+    found = []
+    for c in document.get("cartridges", []):
+        for match in WINDOWS_PATH.finditer(c.get("prompt", "")):
+            path = match.group(0).rstrip(".,;:)")
+            if path not in found:
+                found.append(path)
+    return found[:10]
+
+
 def default_protocol(document, mode=DEFAULT_HANDOVER_MODE):
     """Protocol for a plain v1 document or pasted JSON workflow."""
     return {"handover_mode": mode, "result_profile": "generic", "recovery": recovery_policy(),
-            "loop_police": loop_policy(), "ignored_fields": [], "extended_manifest": False,
+            "loop_police": loop_policy(), "ignored_fields": [], "extended_manifest": False, "required_paths": [],
             "cartridges": {c["id"]: {"handover": [], "inputs": [], "outputs": [], "retry_safe": False,
                                      "dir": cartridge_dir_name(c["id"])} for c in document["cartridges"]}}
 

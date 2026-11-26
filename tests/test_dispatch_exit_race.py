@@ -30,7 +30,11 @@ def test_process_exit_during_cleanup_preserves_result(monkeypatch, kill_timeout)
         assert await worker._request({}) == {'text':'verified response'}
         assert worker.terminated and worker.reader.done()
     asyncio.run(scenario())
-    assert signals == ([signal.SIGTERM, signal.SIGKILL] if kill_timeout else [signal.SIGTERM])
+    expected = [signal.SIGTERM, signal.SIGKILL] if kill_timeout else [signal.SIGTERM]
+    # pi.9: the worker's whole process group is always SIGKILLed afterwards, so
+    # nothing a worker started can outlive it even if its supervisor died.
+    assert signals[:len(expected)] == expected and set(signals[len(expected):]) <= {signal.SIGKILL}
+    assert signals[-1] == signal.SIGKILL
 
 
 def test_exit_race_does_not_hide_worker_failure(monkeypatch):

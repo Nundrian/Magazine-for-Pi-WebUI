@@ -1,18 +1,18 @@
 # Magazine for Pi WebUI 0.120.0 (Pi SDK 1.5.2)
 
 > [!IMPORTANT]
-> **Before installing: use Pi WebUI 0.120.0 with Pi SDK 1.5.2.** This is the recommended tested combination. Do not assume the latest Pi release is compatible.
->
-> Magazine relies on Pi's internal coding-agent SDK to create fresh cartridge sessions, execute tools and manage worker lifecycles. Changes to SDK behaviour can break these integrations even if the plugin installs and its interface opens. In testing the newer confined-worker candidate with Pi WebUI 0.122.0 / SDK 1.6.1, worker-integrity checks failed: the expected shell-tool confinement contract was not verified. These checks deliberately refuse unsafe or unverified execution rather than silently bypassing safeguards.
->
-> Pin both versions and check the SDK actually loaded by Pi before installing or upgrading. See [installation and version checks](docs/INSTALL.md#requirements) and the [compatibility table](#install-and-compatibility) for historical combinations and development status.
+> **Use Pi WebUI 0.120.0 with Pi SDK 1.5.2.** This is the recommended tested pair for the current candidate. Pi 0.122.0 / SDK 1.6.1 failed the confined-worker integrity check in local testing. Do not bypass these safeguards or assume a newer host/SDK is compatible. See [current installation notes](docs/PI104-INSTALL-NOTE.md).
 
 **Give your AI one clear job at a time. Keep the results and see what happened.**
 
-Magazine is a plugin for Pi WebUI. It takes a task that you have split into small,
+Magazine is a general-purpose workflow runner for Pi WebUI. It takes a task that you have split into small,
 ordered steps and runs them using the models you choose. Each step is called a
 **cartridge**. Each attempt gets a fresh, saved conversation, so it does not have
 to carry the whole previous chat into the next job.
+
+Use cartridges for software, research, documents, data processing and other staged work.
+External application connections are optional. See the [pi.10.3 candidate notes](docs/PI103-CORRECTIVE.md)
+for checkpoint behaviour, compatibility and rollout requirements.
 
 It is designed to make larger tasks more manageable for smaller models, while
 remaining usable with larger models too. It is a prompt sequencer, not an AI
@@ -31,6 +31,11 @@ results and token figures shown are illustrations, not a live-model benchmark.*
 4. Choose **Prepare workflow**. This saves a **READY** run; nothing executes yet.
 5. Review it, then choose **Start workflow**.
 6. Read the results, inspect the chats and download the records you need.
+
+Workers run inside a kernel-enforced sandbox: a model can change your project
+workspace but cannot open or rewrite Magazine's own records or Pi's configuration;
+permission changes are detected and repaired. Network access and signals are not
+confined ([details and limits](docs/PI9-RELIABILITY.md)).
 
 Use one compatible Pi model throughout, or assign different models to individual
 steps. Magazine does not require a particular LLM and does not silently replace
@@ -68,34 +73,24 @@ Review the deliverables and use real task-specific tests.
 
 **[Technical guide: execution, checks, handovers and safeguards →](docs/TECHNICAL-GUIDE.md)**
 
-## Development status — 24 November 2026
+## Development status — 26 November 2026
 
-A newer local development build, **0.1.0-pi.9.1**, has been reported after a reliability audit. It adds worker confinement, controller-integrity checks, emergency Stop and explicit damaged-state repair, restore-point management, model-error classification and optional required-path preflight. A follow-up fix addresses Docker Desktop filesystem compatibility.
+Current source: **0.1.0-pi.10.4 corrective candidate**. This supersedes pi.8-ui.5 and incorporates the pi.9 reliability work, pi.10 host tools and checkpoint support, pi.10.3 transactional completion corrections, and pi.10.4 folder-export cleanup fix. See [CHANGELOG.md](CHANGELOG.md) and [pi.10.3 corrective notes](docs/PI103-CORRECTIVE.md).
 
-The local report records 984 passing Python tests (one skipped), 13 passing Node tests and live non-inference checks. Real-model execution under the new sandbox remains unverified. The pi.9.1 source has not yet been synchronised to this repository; these changes are not included in the public source version below.
+The owner-supplied delivery has matching source and plugin checksums. The pi.10.4 change report records 52 focused tests passed and 17 skipped, plus Windows control-flow publication probes. The publisher review additionally ran 28 focused tests with one skip. These are not full live-model acceptance results. The supplied report notes that actual Windows-backed mounts and native Linux descriptor operations were not verified in its environment.
 
-**[Development roadmap and outstanding work](TODO.md)** — priorities, known limitations, acceptance requirements and the reported local changes.
+**[Development roadmap and outstanding work](TODO.md)**.
 
 ## Install and compatibility
 
-Current public source version: **0.1.0-pi.8-ui.5**, including automatic Ollama model
-discovery and guarded interrupted-run reconciliation.
+Current source version: **0.1.0-pi.10.4**: kernel-enforced worker isolation,
+controller-integrity checks, dependable Stop and state repair, restore-point
+management, automatic Ollama model discovery and guarded interrupted-run
+reconciliation. See the [changelog](CHANGELOG.md). The tested Docker Desktop deployment uses
+**Pi WebUI 0.120.0, SDK 1.5.2, Node 22.23.5 and Python 3.11**.
+This is the WebUI plugin, not the separate Pi CLI or Magazine for Open WebUI.
 
-> **Recommended Pi installation: Pi WebUI 0.120.0 with Pi SDK 1.5.2** (`@earendil-works/pi-coding-agent`). Pin both versions; updating Pi WebUI alone can also change the resolved SDK. The tested Docker Desktop deployment uses Node 22.23.5 and Python 3.11.
-
-| Pi WebUI | Pi SDK | Compatibility status |
-| --- | --- | --- |
-| **0.120.0** | **1.5.2** | Recommended deployment; tested host/SDK pair |
-| 0.115.0 | 1.1.0 | Historical allowlisted pair; offline-verified, not current acceptance baseline |
-| 0.96.1 | 1.0.2 | Historical allowlisted pair; earlier live acceptance |
-| 0.122.0 | 1.6.1 | Not supported for the newer confined-worker candidate; local worker-integrity checks failed |
-| Other combinations | Any | Unverified unless explicitly covered by the installed release's compatibility matrix |
-
-Newer development candidates (including pi.10.4) are being validated on the recommended pair. Their worker confinement also relies on SDK-specific shell-tool behaviour; a compatibility override does not establish worker safety. Do not bypass these checks or assume newer Pi/SDK releases are supported. The candidate code is not part of the public source version above.
-
-See the [installation guide and version verification commands](docs/INSTALL.md#requirements) before installing or upgrading. This is the WebUI plugin, not the separate Pi CLI or Magazine for Open WebUI.
-
-Start with [installation](docs/INSTALL.md). Docker Desktop users should also read
+Start with [current installation notes](docs/PI104-INSTALL-NOTE.md), then the [installation procedure](docs/INSTALL.md). Docker Desktop users should also read
 [Linux storage and safe migration](docs/LINUX-STORAGE.md): Magazine's internal
 state needs the supported atomic file operations. Keep backups and update only
 when Magazine is idle. Never remove a current data mount and assume the older

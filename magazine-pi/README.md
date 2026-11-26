@@ -1,10 +1,15 @@
-# Magazine for Pi WebUI — 0.1.0-pi.8-ui.5
+# Magazine for Pi WebUI — 0.1.0-pi.10.4 corrective candidate
 
 Native Pi plugin ID `magazine-pi`. Run bounded cartridges in fresh saved worker
 sessions, using explicit models and tools, committed results and durable records.
 
-This release aligns the appearance and loading/running journey with the owner's
-Open WebUI interface. Choose **Workflows → Load your workflow → Set up → Prepare
+0.1.0-pi.9 confines every worker with Linux Landlock and seccomp, verifies
+Magazine's own files after every attempt, keeps Stop available when run state is
+damaged, adds an explicit Repair state action and restore-point management, and
+halts at once on deterministic model incompatibilities. See
+[PI9-RELIABILITY.md](docs/PI9-RELIABILITY.md).
+
+The interface follows the owner's Open WebUI layout. Choose **Workflows → Load your workflow → Set up → Prepare
 workflow**, review the READY run, then **Start workflow**. Previous work has its
 own selector and View button. Preparing, viewing and restoring never start work.
 
@@ -21,7 +26,7 @@ The runtime preserves the 29 core modules and bundled beta.5 helper, the five
 attempt ceiling, 1,800 seconds per fresh attempt by default, Antiloop, explicit
 STOP/recovery and sequential or Round Robin scheduling. A stopped started run
 is not resumable. COMPLETED records verified execution/results, not real-world
-correctness. A tool allowlist is not an OS sandbox.
+correctness. Network access and signals are not confined (see PI9-RELIABILITY.md).
 
 Requires Linux, Node and Python 3.11 with requirements.txt. Current UI acceptance
 covers host 0.120.0 / SDK 1.5.2 with scripted providers and the installed interface.

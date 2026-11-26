@@ -38,7 +38,8 @@ def main():
     assert hashlib.sha256((plugin / 'beta5_helpers.py').read_bytes()).hexdigest() == reuse['helper_sha256']
     plugin_files = public_files(plugin) + [plugin / 'LICENSE']
     source_files = plugin_files + [ROOT / p for p in (
-        'README.md', 'LICENSE', 'requirements-test.txt', 'requirements-browser-test.txt', 'pytest.ini', '.gitignore')]
+        'README.md', 'CHANGELOG.md', 'LICENSE', 'requirements-test.txt', 'requirements-browser-test.txt',
+        'pytest.ini', '.gitignore', '.gitattributes', 'TODO.md', 'docs/images/overview-annotated.jpg')]
     for directory in ('docs', 'scripts', 'tests'):
         source_files.extend(p for p in public_files(ROOT / directory)
             if p.name not in ('HOST-CONFIGURATION-RESTORATION.md','PERSISTENT-AUTH-INVESTIGATION.md',

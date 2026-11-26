@@ -1,0 +1,131 @@
+{
+  "step_id": "c007",
+  "project_root": "/workspace/Unreal Projects/NebulaSwamp",
+  "status": "DONE",
+  "title": "Establish execution protocol — record supported command/tool invocation, path mapping, and documented connector save/reopen, screenshot, PIE + timeout, reattach/reopen in a project-local bridge contract",
+  "timestamp": "2026-11-24T15:09:00Z",
+  "canonical_paths": {
+    "pi_root": "/workspace/Unreal Projects/NebulaSwamp",
+    "windows_host_root": "E:\\Unreal projects\\NebulaSwamp",
+    "mount": "E:\\ -> /workspace/Unreal Projects (9p rw, drvfs)",
+    "resource_kit_source": "/projects/3D kit",
+    "resource_kit_read_only": true
+  },
+  "predecessor_verification": {
+    "state.json_last_committed_step": "c006",
+    "state.json_completed_steps": ["c001", "c002", "c003", "c004", "c005", "c006"],
+    "c006_status": "DONE",
+    "c006_report_sha256": "3ad5dada9d5faab09ef7d40ae2fc91bbef52203a8faa600ea5ec45fdf4b11bca",
+    "matches_state_last_report_hash": true,
+    "predecessor_valid": true
+  },
+  "path_mapping_evidence": {
+    "mount_table_entry": "E:\\ on /workspace/Unreal Projects type 9p (rw,noatime,aname=drvfs;path=E:\\;uid=0;gid=0;metadata;symlinkroot=/mnt/host/,cache=5,access=client,msize=65536,trans=fd,rfd=5,wfd=5)",
+    "host_to_pi": "E:\\Unreal projects\\NebulaSwamp == /workspace/Unreal Projects/NebulaSwamp",
+    "pi_to_host": "/workspace/Unreal Projects/NebulaSwamp == E:\\Unreal projects\\NebulaSwamp",
+    "realpath_pi_root": "/workspace/Unreal Projects/NebulaSwamp",
+    "not_a_symlink_escape": true,
+    "single_project_identity": true,
+    "substitute_project": "none created"
+  },
+  "supported_tool_invocation": {
+    "worker_filesystem_on_pi": {
+      "interface": "Pi bash worker tools (not docker exec, not host-side connector)",
+      "reversible_probe": {
+        "path": "/workspace/Unreal Projects/NebulaSwamp/evidence/_c007_probe/c007_write_probe.txt",
+        "write": "ok",
+        "read_back": "ok",
+        "sha256": "096a1fab8e7a0a316257a6c4fb2031275cff2994ccca25777039848af3fb8cb7",
+        "delete": "ok",
+        "result": "PROBE_OK"
+      },
+      "applies_to_project_local_deliverables": true
+    },
+    "connector_route_host_side": {
+      "connector_app": "Unreal Connector (uehl), Windows desktop application",
+      "documented_endpoint": "http://127.0.0.1:8765 (loopback, host side)",
+      "installed_on_pi": false,
+      "running_on_pi": false,
+      "port_probe": {
+        "127.0.0.1:8765": "closed (connection refused)",
+        "127.0.0.1:8766": "closed",
+        "127.0.0.1:8767": "closed",
+        "127.0.0.1:8888": "closed",
+        "127.0.0.1:8000": "closed",
+        "127.0.0.1:8080": "closed",
+        "127.0.0.1:9000": "closed",
+        "127.0.0.1:8443": "closed",
+        "127.0.0.1:443": "closed",
+        "127.0.0.1:10000": "closed"
+      },
+      "ue_project_files_on_pi_mount": 0,
+      "ue_binary_or_process_on_pi": "none",
+      "note": "No connector command/HTTP route invocable from Pi; connector is a Windows app not installed here. No endpoint/token/auth-path/allowed-root/engine-version invented."
+    }
+  },
+  "connector_operations_recorded": {
+    "save_and_reopen": {
+      "status": "documentation_recorded; runtime_measurement_unavailable_on_Pi",
+      "reason": "Editor save/reopen is a host-side operation driven through the Connector. Connector absent on Pi; no UE project/engine files on mount. Route documented in project-local bridge contract; no editor save run."
+    },
+    "screenshot": {
+      "status": "optional; measurement_unavailable_on_Pi",
+      "reason": "Needs a live UE editor via the Connector on the host. Not reachable from Pi. Optional capture recorded as a limitation, not a pass."
+    },
+    "pie_and_timeout_procedure": {
+      "status": "documented_route_recorded; runtime_measurement_unavailable_on_Pi",
+      "reason": "Play-in-Editor runs inside the host editor via the Connector. The documented route + required one-instance/one-LLM/serialized mode is the deliverable; the runtime PIE test needs the host editor. Recorded as measurement_unavailable, not a pass."
+    },
+    "save_reattach_reopen_status": {
+      "status": "documentation_recorded; runtime_measurement_unavailable_on_Pi",
+      "reason": "Requires a live Connector session on the host. None started; no editor launched. Mode for any future host-side run: reversible, read-only, one engine instance, one LLM, jobs serialized."
+    }
+  },
+  "execution_protocol_recorded": {
+    "one_engine_instance_one_llm": true,
+    "jobs_serialized": true,
+    "reversible_read_only_first": true,
+    "deterministic_tags": "NS3D_<section>_<role>_<index> (or established equivalent), update-not-duplicate",
+    "failure_discipline": "inspect actual error, one materially different corrective action, stop after two failed attempts with evidence; poll long jobs only at supported intervals with bounded deadline; query existing job + saved state before retry"
+  },
+  "capability_distinction": {
+    "bridge_contract_deliverable": "RECORDED — project-local bridge contract documents supported worker-filesystem invocation on Pi and the documented Connector route on the host, plus path-mapping evidence that both views target the same actual project. c007 deliverable satisfied within Pi.",
+    "runtime_connector_operations": "measurement_unavailable on Pi due to Connector absence — environmental constraint, not a code/tool failure and not a mandatory runtime integration failure inside Pi. No save/screenshot/PIE/reattach run or invented."
+  },
+  "kit_scope_warning": {
+    "3d_resource_kit": "3D asset discovery only (documented c002); NOT the Connector; does not expose engine save/reopen, screenshots, PIE, or reattach.",
+    "no_invented_artifacts": "No Connector endpoint, token, auth path, allowed-root list, or engine version invented or modified."
+  },
+  "runtime_checks_performed": [
+    "verified predecessor c006 DONE + report sha256 3ad5dada9d5faab09ef7d40ae2fc91bbef52203a8faa600ea5ec45fdf4b11bca matches state.json last_report hash",
+    "confirmed E:\\ -> /workspace/Unreal Projects 9p rw mount via mount table; realpath resolved (no symlink escape); single actual project identity",
+    "path mapping E:\\Unreal projects\\NebulaSwamp <-> /workspace/Unreal Projects/NebulaSwamp documented with mount + realpath evidence",
+    "reversible worker-filesystem write/read/delete probe OK (sha256 096a1fab8e7a0a316257a6c4fb2031275cff2994ccca25777039848af3fb8cb7); temp dir removed",
+    "re-probed documented connector port 127.0.0.1:8765 -> closed (connection refused); 8766/8767/8888/8000/8080/9000/8443/443/10000 all closed; no uehl binary/process",
+    "recorded save/reopen, screenshot, PIE+timeout, save->reattach/reopen in project-local bridge contract with actual observed method (worker FS on Pi) or blocker (Connector absent from Pi); runtime operations recorded measurement_unavailable with probe evidence",
+    "recorded execution protocol: one engine instance / one LLM / serialized jobs / deterministic tags / reversible-read-only-first",
+    "no editor launched, no engine instance started, no connector session, no job submitted",
+    "no project/kit/connector/mount/unrelated modification; only project-local evidence + bridge contract added (no host-side UE files touched, kit mount untouched)"
+  ],
+  "limitations": [
+    "Unreal Connector (uehl) is a Windows application NOT installed on this Pi session; host-side connector save/reopen, screenshot, PIE+timeout, and reattach/reopen cannot be executed here — recorded as measurement_unavailable with TCP/process evidence, not a pass",
+    "No UE project or engine files exist on the Pi mount; host-side operations are reachable only via the Connector",
+    "Optional screenshot not retrievable (need live host editor via Connector); not called a pass",
+    "Engine version, editor session, Fab entitlement/license/compatibility still require actual host checks (unchanged from c002-c004)",
+    "Host-side enumeration of E:\\ not performed; identity derived from documented deployment mapping plus confirmed 9p mount"
+  ],
+  "changes": [
+    "created /workspace/Unreal Projects/NebulaSwamp/evidence/c007_bridge_contract.json (bridge contract evidence with path mapping, tool invocation, connector operation capability)",
+    "created /workspace/Unreal Projects/NebulaSwamp/docs/c007_bridge_contract.md (project-local bridge contract)",
+    "created /workspace/Unreal Projects/NebulaSwamp/.magazine-level-v2/c007.json (this step report)"
+  ],
+  "evidence_paths": [
+    "/workspace/Unreal Projects/NebulaSwamp/evidence/c007_bridge_contract.json",
+    "/workspace/Unreal Projects/NebulaSwamp/docs/c007_bridge_contract.md",
+    "/workspace/Unreal Projects/NebulaSwamp/.magazine-level-v2/c007.json"
+  ],
+  "sha256_of_changed_regular_files": {
+    "evidence/c007_bridge_contract.json": "57d2f3db5704280b0107e36ca18072aa7aa05ed68699cd761db119ef604b9c31",
+    "docs/c007_bridge_contract.md": "1e7ec5439bd02b4c3d502e21e47ea818309e9e273f2e764975e45f86fb24671a"
+  }
+}

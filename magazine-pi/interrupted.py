@@ -28,7 +28,7 @@ def worker_evidence():
                 args = (entry / 'cmdline').read_bytes().split(b'\0')
             except FileNotFoundError:
                 continue  # exited during inspection
-            if any(Path(os.fsdecode(arg)).name == 'worker.mjs' for arg in args if arg):
+            if any(Path(os.fsdecode(arg)).name in ('worker.mjs', 'sandbox.py') for arg in args if arg):
                 workers.append(int(entry.name))
     except (OSError, ValueError) as exc:
         return {'status': 'uncertain', 'pids': workers, 'detail': str(exc)}

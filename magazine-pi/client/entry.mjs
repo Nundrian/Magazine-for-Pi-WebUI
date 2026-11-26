@@ -6,7 +6,10 @@
 const API='/plugins-api/magazine-pi/rpc';
 const LAST_RUN='magazine-pi-run';
 const LAST_PROJECT='magazine-pi-project';
-const STATUS_TEXT={READY:'READY',QUEUED:'QUEUED',RUNNING:'RUNNING',STOP_REQUESTED:'STOP REQUESTED',STOPPED:'STOPPED',HALTED:'HALTED',COMPLETED:'COMPLETED'};
+const STATUS_TEXT={READY:'READY',QUEUED:'QUEUED',RUNNING:'RUNNING',STOP_REQUESTED:'STOP REQUESTED',STOPPED:'STOPPED',HALTED:'HALTED',COMPLETED:'COMPLETED',STATE_INVALID:'STATE DAMAGED'};
+// Server records may be incomplete (older runs, damaged state): never assume a list exists.
+const list=v=>Array.isArray(v)?v:[];
+export const formatBytes=n=>{n=Number(n)||0;const u=['B','KB','MB','GB'];let i=0;while(n>=1024&&i<u.length-1){n/=1024;i++;}return `${i?n.toFixed(1):n} ${u[i]}`;};
 const store={get(k){try{return localStorage.getItem(k)||'';}catch{return '';}},set(k,v){try{v?localStorage.setItem(k,v):localStorage.removeItem(k);}catch{}}};
 const isLive=r=>Boolean(r&&(r.active||['RUNNING','QUEUED','STOP_REQUESTED'].includes(r.display_status)));
 
@@ -183,14 +186,14 @@ const HTML=`<style>${STYLE}</style><main class="mag">
  <div class="row"><label>Workflow model<select data-id="shared-model"></select></label><label class="shrink inline"><input type="checkbox" data-id="individual"> Assign models per cartridge</label></div>
  <p class="dim" data-id="catalogue-status" role="status"></p>
  <div class="row" data-id="bulk" hidden><label>Model for selected cartridges<select data-id="bulk-model"></select></label><div class="shrink"><button data-id="bulk-apply">Apply to selected</button></div></div>
- <p><small>Selected tools apply to every cartridge and run with the Pi server's OS permissions; a tool allowlist is not a sandbox, and the open chat's permission preset does not apply to workers. No tools are selected by default.</small></p><div data-id="tools"></div>
+ <p><small>Selected tools apply to every cartridge. Workers run in a kernel-enforced sandbox: they can change the project workspace and their own attempt files, but cannot open Magazine's records or Pi's configuration (permission changes are detected and repaired; network access is not confined). The open chat's permission preset does not apply to workers. No tools are selected by default.</small></p><div data-id="tools"></div>
  <div class="row"><div><label class="inline"><input type="checkbox" data-id="antiloop" checked> Antiloop (stops confirmed repeated tool loops)</label></div>
   <div data-id="mode-box"><label class="inline"><input type="radio" name="mag-mode" value="result_file_v1" checked> Committed result file (recommended)</label><label class="inline"><input type="radio" name="mag-mode" value="legacy_text"> Final text only (pi.5 compatible)</label></div></div>
  <button class="primary" data-id="prepare" disabled>Prepare workflow</button><small>Preparation saves a READY run. Nothing executes until you choose Start.</small></section>
 <section><h2>3. Selected project</h2>
- <div data-id="run-summary"><p class="dim">Select a Magazine above to view its saved progress.</p></div>
+ <div data-id="run-summary"><p class="dim">Select a Magazine above to view its saved progress.</p></div><div data-id="run-confirm"></div>
  <div class="tok" data-id="token-counter" role="group" aria-labelledby="mag-tok-h" hidden><h3 id="mag-tok-h">Reported tokens</h3><dl><div><dt>Input tokens</dt><dd data-id="tok-input">—</dd></div><div><dt>Output tokens</dt><dd data-id="tok-output">—</dd></div><div><dt>Total tokens</dt><dd data-id="tok-total">—</dd></div></dl><p class="dim" data-id="tok-cache"></p><p class="dim" data-id="tok-note" role="status"></p></div>
- <div><button class="primary" data-id="start" disabled>Start workflow</button><button class="stop" data-id="stop" disabled>Stop workflow</button><button data-id="reconcile" disabled>Reconcile interrupted run</button><button data-id="recover" disabled>Prepare recovery</button><button data-id="progress" disabled>Check progress</button><label class="inline" data-id="run-antiloop-box" hidden><input type="checkbox" data-id="run-antiloop"> Antiloop for this run</label></div>
+ <div><button class="primary" data-id="start" disabled>Start workflow</button><button class="stop" data-id="stop" disabled>Stop workflow</button><button data-id="reconcile" disabled>Reconcile interrupted run</button><button data-id="repair" disabled hidden>Repair state</button><button data-id="recover" disabled>Prepare recovery</button><button data-id="progress" disabled>Check progress</button><label class="inline" data-id="run-antiloop-box" hidden><input type="checkbox" data-id="run-antiloop"> Antiloop for this run</label></div>
  <div><button data-id="export" disabled>Export Finished Work</button><button data-id="download" disabled>Download results ZIP</button><button data-id="download-jsonl" disabled>Download Run JSONL</button></div>
  <p><small>STOP is permanent for a run that has started and is not a pause; for a run still waiting for its first turn, Stop removes it from the queue and leaves it READY. A failed run can be recovered to READY and started again within the five-attempt ceiling. After a restart, retained queue entries never resume by themselves: choose Start (after Prepare recovery when the run is HALTED). COMPLETED confirms execution and verified saved results, not real-world correctness.</small></p>
  <div class="row"><h2 class="shrink" style="margin:8px 0 0">Ledger</h2><label class="shrink">Filter<select data-id="ledger-filter"><option value="all">All cartridges</option><option value="done">Done</option><option value="running">Running</option><option value="failed">Failed</option><option value="halted">Halted</option><option value="stopped">Stopped</option><option value="interrupted">Interrupted</option><option value="pending">Pending</option></select></label></div>
@@ -199,6 +202,17 @@ const HTML=`<style>${STYLE}</style><main class="mag">
  <details data-id="markdown-box"><summary>Ledger (Markdown, as exported)</summary><pre data-id="markdown"></pre></details>
  <details data-id="results-box"><summary>Saved results</summary><div data-id="results"></div></details></section>
 </main>`;
+
+// pi.10: which actions are pure reads (safe to retry once); everything else is treated as state-changing.
+const READ_ACTIONS=new Set(['catalogue','chat','chats','delete_preview','ledger','library','preview','repair_preview',
+  'restore_points','results','runs','status','worker_isolation','validate','download','download_jsonl',
+  'host_connections','preflight','scheduler','trash']);
+export function isReadOnly(action,data={}){return READ_ACTIONS.has(action)||(action==='view_state'&&!(data&&data.set));}
+export function authKind(text){return /cookie|已清除|cleared/i.test(String(text))?'stale':'missing';}
+export const AUTH_TEXT=/^Pi sign-in/;  // only read warnings clear themselves; a refused write stays visible
+export function authMessage(kind){return kind==='stale'
+  ?'Pi sign-in: Pi did not accept this browser\'s saved sign-in and cleared it. Open Pi again with its sign-in link (Open Pi WebUI), then refresh Magazine. Runs keep going meanwhile.'
+  :'Pi sign-in: Pi did not receive this browser\'s sign-in on that request. Refresh Magazine; if this repeats, open Pi again with its sign-in link. Runs keep going meanwhile.';}
 
 export default {
   mount(el) {
@@ -213,22 +227,41 @@ export default {
     const chatListWaiters=[];
     const open=new Set();
     const message=(text,error=false)=>{if(closed)return;q('message').textContent=text;q('message').classList.toggle('error',error);};
+    let authWarning=false;
     const call=async(action,data={})=>{
       const initialRead=['library','catalogue','runs','view_state'].includes(action);
+      const readOnly=isReadOnly(action,data);
       for(let attempt=0;;attempt++){
         const response=await fetch(API,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,data})});
         const json=response.headers.get('content-type')?.includes('application/json');
         // A native plugin may be listed just before its routes are activated.
         // Retry only bounded discovery reads; never repeat Prepare/Start/Stop.
         if(initialRead&&attempt<3&&([502,503].includes(response.status)||(response.status===404&&!json))){await new Promise(resolve=>setTimeout(resolve,250*(attempt+1)));continue;}
-        if(!json)throw new Error(response.status===401?'Sign in to Pi again, then refresh Magazine.':`Magazine is not ready (HTTP ${response.status}). Use Refresh list; check saved status before repeating a run action.`);
+        if(!json&&response.status===401){
+          // pi.10: Pi's token check answered 401 in plain text. A read is retried once after a pause, so a
+          // transient rejection (e.g. during a container restart) recovers silently; a state-changing action is
+          // never repeated automatically, because it may already have been performed.
+          const kind=authKind(await response.text().catch(()=>''));
+          if(readOnly&&attempt===0){await new Promise(resolve=>setTimeout(resolve,1200));continue;}
+          authWarning=true;
+          throw new Error(readOnly?authMessage(kind):
+            'Pi rejected this request (sign-in). It may not have been carried out: use Check progress before repeating it. '+authMessage(kind));
+        }
+        if(!json)throw new Error(`Magazine is not ready (HTTP ${response.status}). Use Refresh list; check saved status before repeating a run action.`);
         const value=await response.json();
+        if(authWarning){authWarning=false;if(q('message').classList.contains('error')&&AUTH_TEXT.test(q('message').textContent))message('Connection to Pi restored. Nothing was repeated.');}
         if(!value.ok)throw new Error(value.error||'Magazine request failed');
         return value.result;
       }
     };
     const attempt=fn=>async(...a)=>{try{await fn(...a);}catch(e){message(e.message,true);}};
     const button=(id,fn)=>q(id).addEventListener('click',attempt(fn));
+    // In-page confirmation (no browser modal). Resolves true only on the explicit confirm button.
+    const askConfirm=(host,title,lines,label)=>new Promise(resolve=>{
+      const ok=make('button',{text:label,cls:'stop'}),cancel=make('button',{text:'Cancel'});
+      const box=make('div',{cls:'confirm',role:'alertdialog','aria-label':title},make('strong',{text:title}),...lines.map(t=>make('p',{text:t})),ok,cancel);
+      const done=v=>{box.remove();resolve(v);};ok.addEventListener('click',()=>done(true));cancel.addEventListener('click',()=>done(false));
+      host.replaceChildren(box);cancel.focus();});
     const make=(tag,props={},...kids)=>{const n=document.createElement(tag);for(const [k,v] of Object.entries(props)){if(k==='text')n.textContent=v;else if(k==='cls')n.className=v;else if(k.startsWith('aria-')||k.startsWith('data-'))n.setAttribute(k,v);else n[k]=v;}n.append(...kids);return n;};
     const option=(value,label)=>make('option',{value,text:label});
     const fillModels=(select,first='Choose a model')=>{const keep=select.value;select.replaceChildren(option('',first));for(const m of cat.models)select.append(option(m.id,m.name+' — '+m.provider));if(keep&&!cat.models.some(m=>m.id===keep)){const unavailable=option(keep,keep+' — unavailable');unavailable.disabled=true;select.append(unavailable);}select.value=keep;};
@@ -246,7 +279,7 @@ export default {
       q('appearance').addEventListener('change',()=>{main.dataset.appearance=q('appearance').value;store.set('magazine-pi-appearance',q('appearance').value);});
       const header=make('header',{cls:'project-header','data-id':'run-header','aria-label':'Selected Magazine run',hidden:true});
       const runActions=q('start').parentElement;runActions.classList.add('run-actions');
-      header.append(make('p',{cls:'run-caption',text:'Run workflow · selected saved run'}),make('div',{cls:'run-overview'},make('div',{},q('run-summary'),make('p',{cls:'mobile-run-facts','data-id':'mobile-run-facts'})),q('token-counter')));
+      header.append(make('p',{cls:'run-caption',text:'Run workflow · selected saved run'}),make('div',{cls:'run-overview'},make('div',{},q('run-summary'),q('run-confirm'),make('p',{cls:'mobile-run-facts','data-id':'mobile-run-facts'})),q('token-counter')));
       const actions=q('export').parentElement,stopHelp=actions.nextElementSibling;
       const evidence=make('details',{cls:'run-help'},make('summary',{text:'Run controls and export help'}),stopHelp);
       const currentChat=make('button',{'data-id':'current-chat',text:'Open current chat',disabled:true});
@@ -299,7 +332,7 @@ export default {
         <details><summary>Visible message data (JSON)</summary><pre data-id="chat-raw"></pre></details></div></div>`;
       const manage=panels.manage;manage.innerHTML=`<h2>Manage workflows and saved work</h2><p>Template deletion and saved-run deletion are separate. Deleted Magazine records are recoverable from the trash below. Actual Windows/project files are kept.</p>
         <div class="confirm" data-id="delete-dialog" role="alertdialog" aria-label="Confirm Magazine deletion" hidden><p data-id="delete-summary"></p><button data-id="delete-confirm">Confirm deletion</button><button data-id="delete-cancel">Cancel</button></div>
-        <h3>Workflow templates</h3><div data-id="manage-templates"></div><h3>Saved work / runs</h3><div data-id="manage-runs"></div><h3>Recoverable Magazine trash</h3><div data-id="manage-trash"></div>`;
+        <h3>Workflow templates</h3><div data-id="manage-templates"></div><h3>Saved work / runs</h3><div data-id="manage-runs"></div><h3>Restore points</h3><p class="dim">Deleted saved runs and workflow templates are kept here so they can be restored. Deleting a restore point permanently removes it and frees its storage. Project files, Input ZIPs, exports and active work are never part of a restore point. Nothing is deleted automatically.</p><p data-id="rp-summary" role="status"></p><div class="row"><div class="shrink"><button data-id="rp-select-all">Select all eligible</button><button data-id="rp-delete-selected" disabled>Delete selected</button><button data-id="rp-delete-all" disabled>Delete all eligible</button></div></div><div data-id="rp-confirm"></div><div data-id="manage-trash" class="rp-list"></div><h3>Worker isolation</h3><p data-id="isolation-state" class="dim">Checking…</p><h3>Finished Work exports</h3><div data-id="export-settings" class="dim">Checking…</div><h3>Host connections</h3><p class="dim">Workflows that declare Unreal Connector or 3D Resource Kit reach them through Magazine. Keys stay in Magazine's own data folder; workers and models never see them. The Resource Kit key that the Kit's own pairing wrote for Pi is reused automatically.</p><div data-id="host-connections"></div>`;
       selected.remove();main.append(header,nav,...Object.values(panels));
       if(typeof ResizeObserver!=='undefined'){headerObserver=new ResizeObserver(()=>main.style.setProperty('--mag-header-height',`${header.hidden?0:header.offsetHeight}px`));headerObserver.observe(header);}
     }
@@ -391,8 +424,80 @@ export default {
         act('View',async()=>{await selectRun(r.run_id);await showPanel('overview');}),
         act('Download run JSONL',async()=>{await selectRun(r.run_id);await download('download_jsonl','application/x-ndjson','Run JSONL downloaded.');}),
         act('Delete saved run',()=>confirmDelete('run',r.run_id),{'data-delete-run':r.run_id,disabled:isLive(r),title:isLive(r)?'Active or queued work cannot be deleted.':''}))));
-      const trash=await call('trash');if(closed)return;
-      q('manage-trash').replaceChildren(...(trash.items.length?trash.items.map(t=>row(`${t.kind} · ${t.id}`,act('Restore',async()=>{const v=await call('restore',{trash_id:t.trash_id});await refresh();await renderManage();message(v.message);}))) : [make('p',{cls:'dim',text:'Magazine trash is empty.'})]));
+      await renderRestorePoints();
+      try{const iso=await call('worker_isolation');if(closed)return;
+        q('isolation-state').textContent=iso.enforced?`Enforced: workers run in a Linux Landlock sandbox (ABI ${iso.landlock_abi}). Writable: ${iso.workspace}${list(iso.extra_write_paths).length?', '+iso.extra_write_paths.join(', '):''}, plus each attempt's own files. ${list(iso.limits).join(' ')}`:
+          iso.mode==='off'?'OFF: workerSandbox is set to "off" in config.json. Workers can modify Magazine and Pi files.':'Required but unavailable on this kernel: workers will not start.';}
+      catch(e){q('isolation-state').textContent='Isolation status unavailable: '+e.message;}
+      await renderHosts();
+      await renderExportSettings();
+    }
+    async function renderExportSettings(){
+      const box=q('export-settings');if(!box)return;
+      let v;try{v=await call('export_settings');}catch(e){box.textContent='Export settings unavailable: '+e.message;return;}
+      if(closed)return;
+      const radio=(value,text)=>{const r=make('input',{type:'radio',name:'export-mode',value});r.checked=v.mode===value;return make('label',{cls:'inline'},r,document.createTextNode(' '+text));};
+      const folder=make('input',{type:'text',spellcheck:false,value:v.folder||v.suggestion,'aria-label':'Export folder (inside the Pi workspace)'});
+      const save=make('button',{text:'Save export setting'});
+      const where=make('p',{cls:'dim',text:v.mode==='folder'?`Saving into: ${v.folder_windows||v.folder}`:'Saving through your browser to its download folder (Downloads by default).'});
+      const roots=make('p',{cls:'dim',text:'Folders Magazine can write that you can open in Windows: '+v.roots.map(r=>r.windows?`${r.path} = ${r.windows}`:r.path).join(' · ')});
+      save.addEventListener('click',attempt(async()=>{const mode=box.querySelector('input[name=export-mode]:checked')?.value||'download';
+        await call('set_export_settings',mode==='folder'?{mode,folder:folder.value.trim()}:{mode});message('Export setting saved.');await renderExportSettings();}));
+      box.replaceChildren(radio('download','Download to this browser (your Downloads folder) — default'),make('br'),radio('folder','Save into a folder:'),folder,save,where,roots);
+    }
+    // pi.10: owner-managed host connections (keys are sent once and never shown again).
+    const hostTests={};  // last Test connection result per service, kept across re-renders
+    const testText=r=>(r.ok?'✔ Working: ':'✖ Not working: ')+r.checks.map(c=>c.detail).join(' ')+(r.checked_at?` (checked ${r.checked_at.replace('T',' ').replace('Z',' UTC')})`:'');
+    async function renderHosts(){
+      const box=q('host-connections');if(!box)return;
+      let view;try{view=(await call('host_connections')).services;}catch(e){box.textContent='Host connections unavailable: '+e.message;return;}
+      if(closed)return;
+      box.replaceChildren(...Object.entries(view).map(([id,svc])=>{
+        const state=make('p',{cls:'dim',role:'status',text:svc.configured?`Connected (${svc.source==='pi-mcp'?'reusing the key from Pi\'s 3D Resource Kit pairing':'key stored in Magazine'}) · ${svc.address} · key fingerprint ${svc.key_fingerprint}`:'Not connected.'});
+        const result=make('p',{cls:'dim',role:'status','data-host-test':id,text:svc.configured&&hostTests[id]?testText(hostTests[id]):''});
+        const key=make('input',{type:'password',autocomplete:'off',spellcheck:false,placeholder:id==='resource_kit'?'rk_… (Resource Kit > Settings > AI connections)':'Unreal Connector > Settings > Copy API key','aria-label':svc.label+' key'});
+        const save=make('button',{text:svc.configured?'Replace key':'Connect'}),test=make('button',{text:'Test connection',disabled:!svc.configured}),forget=make('button',{text:'Forget key',disabled:svc.source!=='magazine'});
+        const runTest=async()=>{result.textContent='Testing…';const r=await call('host_test',{service:id});hostTests[id]=r;result.textContent=testText(r);return r;};
+        // Connect saves the key and immediately proves it with an authenticated call, then shows the outcome.
+        save.addEventListener('click',attempt(async()=>{const v=key.value.trim();key.value='';if(!v)throw new Error('Paste the key first.');
+          await call('host_connect',{service:id,key:v});delete hostTests[id];await renderHosts();
+          const row=q('host-connections').querySelector(`[data-host-test="${id}"]`);
+          result.textContent='';const r=await call('host_test',{service:id});hostTests[id]=r;if(row)row.textContent=testText(r);
+          message(svc.label+(r.ok?' connected and tested: working.':' key saved, but the test failed: '+r.problems.join(' ')),!r.ok);}));
+        test.addEventListener('click',attempt(runTest));
+        forget.addEventListener('click',attempt(async()=>{await call('host_forget',{service:id});message(svc.label+' key removed from Magazine.');await renderHosts();}));
+        return make('div',{cls:'manage-row'},make('strong',{text:svc.label}),state,result,make('div',{cls:'row'},key,make('div',{cls:'shrink'},save,test,forget)));}));
+    }
+    let restorePoints=[];const rpSelected=new Set();
+    async function renderRestorePoints(){
+      const act=(text,fn,props={})=>{const b=make('button',{text,...props});b.addEventListener('click',attempt(fn));return b;};
+      const value=await call('restore_points');if(closed)return;restorePoints=list(value.items);
+      for(const id of [...rpSelected])if(!restorePoints.some(p=>p.trash_id===id&&p.can_delete))rpSelected.delete(id);
+      const eligible=restorePoints.filter(p=>p.can_delete);
+      q('rp-summary').textContent=restorePoints.length?`${restorePoints.length} restore point${restorePoints.length===1?'':'s'} · ${formatBytes(value.total_bytes)} in total · ${formatBytes(value.reclaimable_bytes)} can be reclaimed from ${eligible.length} eligible.`:'No restore points.';
+      q('rp-delete-all').disabled=!eligible.length;q('rp-select-all').disabled=!eligible.length;q('rp-delete-selected').disabled=!rpSelected.size;
+      q('manage-trash').replaceChildren(...restorePoints.map(p=>{
+        const box=make('input',{type:'checkbox',disabled:!p.can_delete,checked:rpSelected.has(p.trash_id),'aria-label':'Select restore point '+p.trash_id});
+        box.addEventListener('change',()=>{box.checked?rpSelected.add(p.trash_id):rpSelected.delete(p.trash_id);q('rp-delete-selected').disabled=!rpSelected.size;});
+        const when=p.created_at?new Date(p.created_at*1000).toLocaleString():'unknown time';
+        const run=p.run?` · ${p.run.status||'?'} · ${p.run.completed??'?'} of ${p.run.total??'?'} steps${p.run.cartridge?` · next ${p.run.cartridge}`:''}${p.run.last_completed?` · last completed ${p.run.last_completed}`:''}`:'';
+        const title=`${p.kind==='run'?'Saved run':p.kind==='template'?'Workflow template':'Restore point'} · ${p.name||p.id||p.trash_id}${p.kind==='run'&&p.id?' · '+p.id:''}`;
+        const facts=make('span',{cls:'sub',text:`${when} · ${p.reason||''} · ${formatBytes(p.bytes)}${p.shared_files?` (${p.shared_files} shared file(s) kept elsewhere)`:''}${run}`});
+        const restore=act('Restore',async()=>{const v=await call('restore',{trash_id:p.trash_id});await refresh();await renderManage();message(v.message);},{disabled:!p.can_restore});
+        const del=act('Delete',()=>deleteRestorePoints([p.trash_id]),{disabled:!p.can_delete,title:p.protected_reason||''});
+        return make('div',{cls:'manage-row','data-restore-point':p.trash_id},make('label',{cls:'inline'},box,make('strong',{text:title})),facts,
+          ...(p.protected_reason?[make('p',{cls:'dim',text:'Protected: '+p.protected_reason})]:[]),restore,del);}));
+      if(!restorePoints.length)q('manage-trash').replaceChildren(make('p',{cls:'dim',text:'There are no restore points.'}));
+    }
+    async function deleteRestorePoints(ids,all=false){
+      const chosen=restorePoints.filter(p=>all?p.can_delete:ids.includes(p.trash_id));if(!chosen.length)return;
+      const bytes=chosen.reduce((n,p)=>n+(p.reclaimable_bytes||0),0);
+      const lines=[`${chosen.length} restore point${chosen.length===1?'':'s'} will be permanently deleted and about ${formatBytes(bytes)} reclaimed. This cannot be undone.`,
+        ...chosen.slice(0,12).map(p=>`• ${p.kind||'item'} ${p.name||p.id||p.trash_id}`),...(chosen.length>12?[`• and ${chosen.length-12} more`]:[]),
+        'Project files, Input ZIPs, Finished Work exports and saved runs that are not in the trash are not affected.'];
+      if(!await askConfirm(q('rp-confirm'),'Permanently delete restore points?',lines,'Delete permanently'))return;
+      const result=await call('delete_restore_points',all?{all_eligible:true,expected:chosen.length,confirm:true}:{trash_ids:chosen.map(p=>p.trash_id),confirm:true});
+      for(const id of result.deleted)rpSelected.delete(id);await renderManage();message(`${result.message} ${formatBytes(result.reclaimed_bytes)} reclaimed.`);
     }
     async function confirmDelete(kind,id){
       let text;if(kind==='run'){const p=await call('delete_preview',{run_id:id});text=p.message+' Removed: '+p.removed.join(', ')+'. Kept: '+p.kept.join(', ')+'.';}
@@ -422,6 +527,9 @@ export default {
       const changes=selects.map(s=>`${s.dataset.cartridge}: ${(q('individual').checked&&s.value)||q('shared-model').value||'Unassigned'} → ${v.plan.cartridge_models[s.dataset.cartridge]}${v.plan.rationale[s.dataset.cartridge]?' — '+v.plan.rationale[s.dataset.cartridge]:''}`);
       q('individual').checked=true;q('shared-model').value='';q('bulk').hidden=false;for(const s of selects){s.hidden=false;s.value=v.plan.cartridge_models[s.dataset.cartridge];}
       planApplied=v.plan;q('workflow-steps').open=true;q('plan-state').textContent='Applied to setup only. You may override models manually; Prepare and Start are still separate actions.';q('plan-preview').replaceChildren(...changes.map(text=>make('p',{text})));allocation();message('Suggestions applied to setup. Review manual overrides, then Prepare.');});
+    button('rp-select-all',()=>{for(const p of restorePoints)if(p.can_delete)rpSelected.add(p.trash_id);for(const b of q('manage-trash').querySelectorAll('input[type=checkbox]'))if(!b.disabled)b.checked=true;q('rp-delete-selected').disabled=!rpSelected.size;});
+    button('rp-delete-selected',()=>deleteRestorePoints([...rpSelected]));
+    button('rp-delete-all',()=>deleteRestorePoints([],true));
     button('delete-cancel',()=>{deleteTarget=null;q('delete-dialog').hidden=true;q('delete-confirm').disabled=true;});
     button('delete-confirm',async()=>{if(!deleteTarget)return;const {kind,id}=deleteTarget;q('delete-confirm').disabled=true;
       let result;try{result=await call(kind==='run'?'delete_run':'delete_template',{...(kind==='run'?{run_id:id}:{project_id:id}),confirmation:id});}catch(error){q('delete-confirm').disabled=false;throw error;}
@@ -450,6 +558,9 @@ export default {
       const rec=proto.recovery||{};
       q('preview-head').replaceChildren(make('p',{},make('span',{cls:'badge',text:doc.cartridges.length+' cartridges'}),
         document.createTextNode(`${value.name||'Workflow'}${rec.max_attempts?` · up to ${rec.max_attempts} attempts per cartridge, ${rec.attempt_seconds} s each`:''}${declared?` · protocol ${proto.handover_mode}`:''}${proto.ignored_fields?.length?` · ignored: ${proto.ignored_fields.join(', ')}`:''}`)));
+      const pc=value.path_check||{};
+      if(list(pc.required).length)q('preview-head').append(make('p',{cls:list(pc.missing).length?'msg error':'dim',text:'Required project paths: '+pc.required.join(', ')+(list(pc.missing).length?' · MISSING: '+pc.missing.join('; ')+'. Start will be refused until they are mounted.':' · all available')}));
+      if(list(pc.windows_paths).length)q('preview-head').append(make('p',{cls:'msg',text:'This workflow names Windows paths ('+pc.windows_paths.join(', ')+'). '+(pc.note||'')}));
       q('cartridges').replaceChildren();
       for(const [i,c] of doc.cartridges.entries()){
         const d=proto.cartridges?.[c.id]||{};
@@ -496,7 +607,7 @@ export default {
         const row=make('tr',{'aria-selected':String(r.run_id===runId)},
           make('td',{},name,make('span',{cls:'sub',text:`${r.run_id} · ${(r.created_at||'').slice(0,16).replace('T',' ')}`})),
           two(status,r.queue?.recovery_required?'Recovery required':''),
-          make('td',{text:`${r.completed??r.done.length} / ${r.total??(r.done.length+r.todo.length)}`}),
+          make('td',{text:`${r.completed??list(r.done).length} / ${r.total??(list(r.done).length+list(r.todo).length)}`}),
           make('td',{text:(r.next_cartridge||'—')+(r.attempt?` · attempt ${r.attempt}`:'')}),
           make('td',{text:shortModel(r.model),title:r.model||''}),
           two(tok,state),
@@ -530,7 +641,7 @@ export default {
         make('p',{cls:'msg',text:[a.code,a.note].filter(Boolean).join(' — ')}),make('p',{cls:'msg',text:a.retry_decision?.reason||''}),raw);
     }
     function renderLedger(r){
-      const rows=r.ledger?.cartridges||r.order.map(id=>({id,status:r.done.includes(id)?'done':'pending',attempts:0,tokens:null}));
+      const rows=r.ledger?.cartridges||list(r.order).map(id=>({id,status:list(r.done).includes(id)?'done':'pending',attempts:0,tokens:null}));
       ledgerId=ledgerChoice(rows,ledgerId||store.get('magazine-pi-ledger-'+r.run_id),r.current_cartridge);
       const filter=q('ledger-filter').value,options=rows.map((c,i)=>({c,i})).filter(({c})=>filter==='all'||c.status===filter||c.id===ledgerId);
       q('cartridge-select').replaceChildren(...options.map(({c,i})=>option(c.id,`${i+1} · ${c.id} · ${c.status}`)));q('cartridge-select').value=ledgerId;
@@ -544,7 +655,7 @@ export default {
         ['Started',attempts[0]?.started||'Not started'],['Finished',attempts.length?attempts[attempts.length-1].finished||'Still active / not recorded':'Not started'],
         ['Recorded duration',duration(c.elapsed_seconds,c.active)],['Warnings',String(c.warnings||0)],['Last failure / decision',[c.last_code,c.last_decision].filter(Boolean).join(' · ')||'none']];
       const dl=make('dl',{cls:'facts'});for(const [key,value] of facts)dl.append(make('dt',{text:key}),make('dd',{text:value}));
-      const output=make('div',{'data-ledger-cartridge':c.id},make('h3',{text:`${r.order.indexOf(c.id)+1} · ${c.id}`}),dl);
+      const output=make('div',{'data-ledger-cartridge':c.id},make('h3',{text:`${list(r.order).indexOf(c.id)+1} · ${c.id}`}),dl);
       for(const a of attempts){const key=`${r.run_id}:${c.id}:${a.attempt_id}`,detail=make('details',{cls:'attempt',open:open.has(key)},make('summary',{text:`Attempt ${a.attempt_number} · ${a.status}`}));
         detail.addEventListener('toggle',()=>{if(detail.isConnected){detail.open?open.add(key):open.delete(key);}});detail.append(attemptBlock(c,a));output.append(detail);}
       if(!attempts.length)output.append(make('p',{cls:'dim',text:c.attempts?'Loading retained attempt details…':'No attempts recorded for this cartridge.'}));
@@ -555,7 +666,7 @@ export default {
     // ------------------------------------------------------------ the run
     function renderRun(r){
       last=r;q('run-header').hidden=false;const status=r.display_status||r.status;const qd=r.queue||{};
-      const total=r.order.length,done=r.done.length;
+      const total=list(r.order).length,done=list(r.done).length;
       const head=make('div',{cls:'run-identity'},make('strong',{text:r.name||'Workflow'}),make('span',{cls:'badge '+status,text:STATUS_TEXT[status]||status}));
       const proto=r.protocol||{};
       const lines=[`Run reference: ${r.run_id} · Prepared: ${r.created_at||'unavailable'}`,tokenLine(r.tokens)+(r.tokens?.source==='retained_sessions_without_ledger'?' (legacy run: derived from retained sessions; per-cartridge association not recorded)':''),
@@ -570,29 +681,41 @@ export default {
         lines.push('Inference cancellation: unconfirmed. External operation completion: unknown. Reconcile interrupted run halts Magazine without starting inference.');
       }
       if(r.export)lines.push('Finished Work: '+r.export.status+' · '+(r.export.message||r.export.directory||''));
+      if(r.isolation)lines.push(`Worker isolation: ${r.isolation.mode==='required'?(r.isolation.landlock_abi?`kernel sandbox (Landlock ABI ${r.isolation.landlock_abi})`:'required but unavailable — workers will not start'):'OFF by operator configuration'}`);
+      if(list(r.required_paths?.required).length)lines.push('Required project paths: '+r.required_paths.required.join(', ')+(list(r.required_paths.missing).length?' · MISSING: '+r.required_paths.missing.join('; '):' · available'));
       const elapsed=(r.ledger?.cartridges||[]).reduce((n,c)=>n+(c.elapsed_seconds||0),0);
       q('mobile-run-facts').textContent=`Tokens ${r.tokens?.total==null?'—':Number(r.tokens.total).toLocaleString()}${r.tokens?.incomplete?' · partial':''} · Duration ${duration(elapsed,Boolean(r.active))}`;
       const detail=make('details',{},make('summary',{text:'Run details, models and execution evidence'}),...lines.map(t=>make('p',{cls:'dim',text:t})));
       q('run-summary').replaceChildren(head,make('p',{text:`${done} of ${total} steps finished${r.current_cartridge?` · current ${r.current_cartridge}`:''} · ${duration(elapsed,Boolean(r.active))}`}),make('progress',{cls:'run-progress',max:Math.max(total,1),value:done,'aria-label':'Verified workflow progress'}),detail);
       if(r.status==='RUNNING'&&!r.active)q('run-summary').append(make('p',{text:r.reconciliation?.detail||'Execution ownership is uncertain. Inspect the recorded owner before recovery.'}));
+      const damaged=status==='STATE_INVALID';
+      if(damaged){q('run-summary').append(make('p',{cls:'msg error',role:'alert',text:(r.repair?.detail||'The controller state cannot be read.')+(r.state_error?' Detail: '+r.state_error:'')}));
+        if(r.emergency_stop)q('run-summary').append(make('p',{cls:'dim',text:`Emergency stop recorded ${r.emergency_stop.requested_at||''}: task ${r.emergency_stop.active_task?'cancelled':'not active'}, worker ${r.emergency_stop.worker}, worker processes now ${r.emergency_stop.worker_processes_after}.`}));}
+      if(list(r.required_paths?.missing).length)q('run-summary').append(make('p',{cls:'msg error',text:'Required project path missing: '+r.required_paths.missing.join('; ')+'. Start is refused until it is mounted.'}));
+      if(r.dependencies){const c=r.dependencies.last_check;const names=Object.keys(r.dependencies.declared?.services||{}).join(', ');
+        const recheck=make('button',{text:'Recheck dependencies'});
+        recheck.addEventListener('click',attempt(async()=>{const x=await call('preflight',{run_id:runId});message(x.ok?'All declared dependencies are available.':'Dependencies not ready: '+x.problems.join(' '),!x.ok);await progress(false);}));
+        q('run-summary').append(make('p',{cls:c&&!c.ok?'msg error':'dim',text:`Host applications: ${names}. `+(c?(c.ok?`Checked ${c.checked_at||''}: available.`:'Not ready: '+list(c.problems).join(' ')):'Not checked yet; Start checks them before any model runs.')+(r.dependencies.declared?.approval_note?' Owner approval: '+r.dependencies.declared.approval_note:'')}),recheck);}
       const tv=tokenCounter(r.tokens,status);q('token-counter').hidden=false;
       for(const k of ['input','output','total'])q('tok-'+k).textContent=tv[k];
       q('tok-cache').textContent=tv.cache;q('tok-cache').hidden=!tv.cache;
       q('tok-note').textContent=tv.note+(r.tokens?.source==='retained_sessions_without_ledger'?' Legacy run: derived from retained sessions.':'');
       const stopped=status==='STOPPED'||Boolean(r.control);
+      q('repair').hidden=!damaged;q('repair').disabled=!(damaged&&r.repair?.available);q('repair').title=r.repair?.detail||'';
       const waitingFirst=qd.queued&&(!qd.entered_core||qd.recovery_required)&&['READY','HALTED'].includes(r.status);
       q('start').disabled=r.status!=='READY'||stopped||(qd.queued&&!qd.recovery_required)||Boolean(r.execution&&!r.execution.halted&&!r.execution.owner_alive);
-      q('stop').disabled=!(waitingFirst||(['READY','RUNNING'].includes(r.status)&&r.execution&&r.control?.termination_status!=='CONFIRMED'));
+      // Stop never depends on readable state: a damaged or active run can always be stopped.
+      q('stop').disabled=!(damaged||r.active||waitingFirst||(['READY','RUNNING'].includes(r.status)&&r.execution&&r.control?.termination_status!=='CONFIRMED'));
       q('stop').textContent=waitingFirst?'Remove from queue':'Stop workflow';
-      q('recover').disabled=stopped||!(r.status==='HALTED'||(r.status==='READY'&&r.execution&&!r.execution.owner_alive));
+      q('recover').disabled=damaged||stopped||!(r.status==='HALTED'||(r.status==='READY'&&r.execution&&!r.execution.owner_alive));
       q('recover').title=stopped?'A STOPPED run is not resumable; prepare a new run instead.':'';
       q('reconcile').disabled=!r.reconciliation?.eligible;
       q('reconcile').title=r.reconciliation?.detail||'No interrupted execution is eligible for reconciliation';
-      q('progress').disabled=false;q('export').disabled=!['COMPLETED','HALTED'].includes(r.status);q('download').disabled=q('export').disabled;q('download-jsonl').disabled=false;
+      q('progress').disabled=false;q('export').disabled=!['COMPLETED','HALTED'].includes(r.status);q('download').disabled=q('export').disabled;q('download-jsonl').disabled=damaged;
       q('current-chat').disabled=false;
       const canToggle=r.status==='READY'&&!proto.legacy&&!proto.antiloop_frozen;q('run-antiloop-box').hidden=!canToggle;q('run-antiloop').checked=Boolean(proto.antiloop);
       renderLedger(r);
-      q('activity').replaceChildren(...((r.ledger?.activity)||[]).slice(-15).reverse().map(a=>make('li',{cls:a.level,text:`${(a.at||'').slice(11,19)} ${a.text}`})));
+      q('activity').replaceChildren(...list(r.ledger?.activity).slice(-15).reverse().map(a=>make('li',{cls:a.level,text:`${(a.at||'').slice(11,19)} ${a.text}`})));
     }
     async function progress(announce=true){
       if(!runId||closed||polling)return;polling=true;const mine=selection,requested=runId;
@@ -607,7 +730,7 @@ export default {
     }
     async function loadResults(mine=selection){const out=await call('results',{run_id:runId});if(mine!==selection)return;
       const expanded=new Map([...q('results').children].map(d=>[d.dataset.cartridge,{step:d.open,json:d.querySelector('details')?.open}]));
-      q('results').replaceChildren(...out.done.map(id=>{const hv=(out.handovers||{})[id],kids=[make('summary',{text:id})];
+      q('results').replaceChildren(...list(out.done).map(id=>{const hv=(out.handovers||{})[id],kids=[make('summary',{text:id})];
         if(hv){const text=handoverText(hv.payload);
           if(text)kids.push(make('p',{cls:'dim',text:'Result (from the committed handover):'}),make('pre',{text}));
           kids.push(make('details',{open:Boolean(expanded.get(id)?.json)},make('summary',{text:hv.error?'Committed handover unavailable':'Committed handover (JSON)'}),make('pre',{text:hv.error||JSON.stringify(hv.payload,null,2)})));
@@ -617,7 +740,7 @@ export default {
     async function selectRun(id,persist=true){
       selection++;ledgerRequest++;runId=id;fullLedger=null;ledgerHandovers={};ledgerId=store.get('magazine-pi-ledger-'+id);last=null;renderDashboard();q('current-chat').disabled=!id;q('run-header').hidden=!id;
       if(persist)await remember({run_id:id||null});
-      if(!id){q('token-counter').hidden=true;q('run-summary').replaceChildren(make('p',{cls:'dim',text:runs.length?'Select a Magazine above to view its saved progress.':'Prepare a workflow to begin.'}));q('ledger').replaceChildren();for(const b of ['start','stop','reconcile','recover','progress','export','download','download-jsonl'])q(b).disabled=true;return;}
+      if(!id){q('token-counter').hidden=true;q('run-summary').replaceChildren(make('p',{cls:'dim',text:runs.length?'Select a Magazine above to view its saved progress.':'Prepare a workflow to begin.'}));q('ledger').replaceChildren();for(const b of ['start','stop','reconcile','repair','recover','progress','export','download','download-jsonl'])q(b).disabled=true;q('repair').hidden=true;return;}
       await progress(false);
     }
     let catalogueBusy=false;
@@ -687,8 +810,48 @@ export default {
       if(!preview.protocol?.declared_mode&&mode)data.handover_mode=mode;
       const run=await call('prepare',data);await loadRuns();await selectRun(run.run_id);message('Workflow READY. Review the prepared run, then choose Start workflow.');await showPanel('overview');
     });
-    for(const action of ['start','stop','recover','export','reconcile'])button(action,async()=>{const result=await call(action,{run_id:runId});await loadRuns();await progress(false);
-      message(result.message||({start:result.status==='queued'?`Queued at position #${result.queue_position}.`:'Workflow started.',stop:'Stop request processed.',recover:'Recovery prepared. Choose Start to execute.',export:'Finished Work export checked.',reconcile:'Interrupted run reconciled. Nothing was started.'}[action]));});
+    const saveDownload=(file,type)=>{
+      const bytes=Uint8Array.from(atob(file.file_data_b64),c=>c.charCodeAt(0));
+      const url=URL.createObjectURL(new Blob([bytes],{type}));
+      const link=make('a',{href:url,download:file.file_name});
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setTimeout(()=>URL.revokeObjectURL(url),30000);
+    };
+    const exportFinished=async(deliveryMode)=>{
+      const data={run_id:runId,...(deliveryMode?{delivery_mode:deliveryMode}:{})};
+      const r=await call('export',data);
+      await loadRuns();
+      await progress(false);
+      const d=r.delivery||{};
+      if(r.export?.status!=='EXPORTED')throw new Error(r.export?.message||'Finished Work export failed.');
+      if(d.mode==='download'&&d.ok&&d.file_data_b64){
+        saveDownload(d,'application/zip');
+        message('Browser download requested for '+d.file_name+'.');
+      }else if(d.mode==='folder'&&d.ok){
+        message('Finished Work '+(d.reused?'was already saved':'saved')+' in '+(d.windows_path||d.container_path)+'.');
+      }else{
+        message('Finished Work is retained in Magazine. Delivery failed. '+(d.error||'Try again from the run view.'),true);
+        if(d.mode==='folder'){
+          const fallback=make('button',{type:'button'});
+          fallback.textContent='Download ZIP';
+          fallback.addEventListener('click',()=>{fallback.disabled=true;exportFinished('download').catch(e=>message(e.message,true));},{once:true});
+          q('message').append(' ',fallback);
+        }
+      }
+    };
+    button('export',()=>exportFinished());
+    for(const action of ['start','stop','recover','reconcile'])button(action,async()=>{const result=await call(action,{run_id:runId});await loadRuns();await progress(false);
+      message(result.message||({start:result.status==='queued'?`Queued at position #${result.queue_position}.`:'Workflow started.',stop:'Stop request processed.',recover:'Recovery prepared. Choose Start to execute.',reconcile:'Interrupted run reconciled. Nothing was started.'}[action]));});
+    button('repair',async()=>{const plan=await call('repair_preview',{run_id:runId});
+      const lines=[plan.message,'Problem: '+plan.problem,...list(plan.decisions).map(d=>`${d.cartridge_id}: ${d.accepted?'accepted':'not accepted'} — ${d.reason}`),
+        ...(list(plan.implicated_attempts).length?['Attempts rejected: '+plan.implicated_attempts.map(a=>`${a.cartridge_id} attempt ${a.attempt_number}`).join(', ')]:[]),
+        ...(list(plan.foreign_files).length?['Foreign files moved to quarantine: '+plan.foreign_files.join(', ')]:[]),
+        `Result: ${plan.proposed_state.status}, ${list(plan.proposed_state.done).length} verified step(s), current ${plan.proposed_state.current||'none'}.`];
+      if(!await askConfirm(q('run-confirm'),'Repair this run\'s controller state?',lines,'Repair state'))return;
+      const result=await call('repair_state',{run_id:runId,confirm:true});await loadRuns();await progress(false);
+      message(`State repaired: ${result.state.status}. Damaged files kept in ${result.quarantine}. Nothing was started.`);});
     button('progress',async()=>{await progress();await loadRuns();});
     const download=async(action,type,text)=>{const file=await call(action,{run_id:runId});const bytes=Uint8Array.from(atob(file.file_data_b64),c=>c.charCodeAt(0));const url=URL.createObjectURL(new Blob([bytes],{type}));const link=make('a',{href:url,download:file.file_name});link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);message(text);};
     button('download',()=>download('download','application/zip','Results ZIP downloaded (includes the attempt ledger).'));

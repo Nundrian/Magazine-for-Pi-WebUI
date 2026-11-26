@@ -9,6 +9,7 @@ import io
 import json
 import os
 import re
+import shutil
 import signal
 import sys
 import tempfile
@@ -24,14 +25,21 @@ from model_selection import select_models
 from run_export import export_run, ExportError, redact
 import executor as ex
 import handover as ho
+import host_tools
+import finished_export as fx
+import checkpoint as cpt
 import scheduler as sch
 import ledger as lg
 import protocol as proto
 import tokens
 import ui_support as ui
 import interrupted
+import integrity
+import pi_dispatch as PiDispatchModule
+import restore_points as rp
+import sandbox
 
-VERSION = '0.1.0-pi.8-ui.5'
+VERSION = '0.1.0-pi.10.4'
 CORE = {'ok': True}
 for key, module in {'ar':'async_runner','state':'state','ss':'state_store',
     'doc':'document','rp':'run_preparation','ra':'run_action','rl':'run_lock',
@@ -84,6 +92,33 @@ class Service:
         self.catalogue_lock = asyncio.Lock()
         self.scheduler = sch.Scheduler(self.root, self._launch)
         self.ui = ui.Support(self)
+        self.restore_points = rp.RestorePoints(self)
+        self.integrity_events = self.root / 'integrity-events.jsonl'
+        # pi.10: trusted broker for workflows that declare host applications (credentials stay in this process).
+        self.host = host_tools.HostBroker(self.root, config.get('agentDir'))
+        self.preflights = {}
+        self.heal(full=True)
+        # Scratch folders hold copies of model configuration; remove those left
+        # by a crashed service, but only when no worker process can still use them.
+        if interrupted.worker_evidence()['status'] == 'absent':
+            for stale in (self.root / 'temp').glob('worker-*'):
+                if stale.is_dir() and not stale.is_symlink():
+                    shutil.rmtree(stale, ignore_errors=True)
+
+    def heal(self, full=False):
+        """Put back owner access a confined worker may have removed (chmod is not
+        governed by Landlock). Each correction is logged for the operator."""
+        try:
+            healed = integrity.heal_full(self.root) if full else integrity.heal_tree(self.root)
+        except OSError:
+            return []
+        if healed:
+            try:
+                with open(self.integrity_events, 'a', encoding='utf-8') as stream:
+                    stream.write(json.dumps({'at': h._now(), 'event': 'permissions_restored', 'paths': healed}) + '\n')
+            except OSError:
+                pass
+        return healed
 
     def save_meta(self, owner, rid, value):
         atomic_write(h._meta_path(owner, rid), (json.dumps(value) + '\n').encode())
@@ -146,10 +181,17 @@ class Service:
         if not path.is_file():
             loaded = CORE['doc'].load_document(h._mag_path(owner, rid))
             return legacy_protocol(loaded.document)
-        value = json.loads(path.read_text(encoding='utf-8'))
-        require(value.get('version') == proto.PROTOCOL_VERSION, 409,
-                'This run was prepared by a newer Magazine protocol; it will not be resumed by this version')
-        return value
+        try:
+            value = json.loads(path.read_text(encoding='utf-8'))
+            require(isinstance(value, dict) and type(value.get('version')) is int
+                    and value['version'] in proto.KNOWN_PROTOCOL_VERSIONS, 409,
+                    'Saved Magazine protocol is invalid or unsupported on this version')
+            if value.get('requires') or value.get('project_checkpoint') is not None:
+                doc = CORE['doc'].load_document(h._mag_path(owner, rid)).document
+                return proto.validate_saved_extensions(value, [item['id'] for item in doc['cartridges']])
+            return value
+        except (OSError, ValueError, RecursionError) as exc:
+            raise ApiError(409, f'Saved Magazine protocol could not be validated: {exc}') from None
 
     def save_protocol(self, owner, rid, value):
         atomic_write(str(self.protocol_path(owner, rid)), (json.dumps(value, ensure_ascii=False) + '\n').encode('utf-8'))
@@ -171,6 +213,8 @@ class Service:
     # ------------------------------------------------------------ dispatch
     async def handle(self, request):
         require(isinstance(request, dict), 400, 'Request must be an object')
+        self.heal()
+        PiDispatchModule.reap_orphans()  # descendants of finished workers never linger
         action = request.get('action')
         data = request.get('data', {})
         require(isinstance(data, dict), 400, 'Action data must be an object')
@@ -189,6 +233,7 @@ class Service:
             if value.get('valid'):
                 _, protocol = self.library_protocol(data['project_id'])
                 value['protocol'] = self.protocol_view(protocol)
+                value['path_check'] = self.path_check(protocol.get('required_paths', []), value['document'])
                 pref = self.antiloop_preference(data['project_id'])
                 value['antiloop'] = protocol['loop_police']['enabled'] if pref is None else pref
                 cat = await self.catalogue()
@@ -212,10 +257,49 @@ class Service:
                      'instructions': 'Suggest exact Pi catalogue IDs using schema_version 1.0, workflow_name, ordered cartridge_ids, cartridge_models and optional rationale/default_model. Use task requirements and measured local reliability where provided; otherwise mark reliability unknown. Qwen3-Coder-30B-A3B is non-thinking, not a reasoning model. Do not assume suitability for complex security/planning; prior local tool-call failures are a risk. Model-card claims and the prior 75/40/16/14 task allocation are not comparative local benchmarks. Context/memory/quantisation compatibility must be verified for the actual installation. No remote call is made by Magazine.'}
             return {'brief': json.dumps(brief, ensure_ascii=False, indent=2),
                     'warning': 'This brief contains workflow prompts. Review and remove sensitive content before copying it to another service.'}
+        if action == 'restore_points':
+            return self.restore_points.list()
+        if action == 'delete_restore_points':
+            try:
+                return self.restore_points.delete(data)
+            except rp.RestorePointError as error:
+                raise ApiError(error.code, str(error)) from error
+        if action == 'worker_isolation':
+            return self.isolation_view()
+        if action == 'export_settings':
+            return self.export_settings_view()
+        if action == 'set_export_settings':
+            require(set(data) <= {'mode', 'folder'}, 400, 'Only mode and folder are accepted')
+            allowed, protected = self.export_roots()
+            try:
+                fx.set_preferences(self.root, data.get('mode'), data.get('folder'), allowed, protected)
+            except ValueError as error:
+                raise ApiError(400, str(error)) from error
+            return self.export_settings_view()
+        if action == 'host_connections':
+            return {'services': self.host.summary()}
+        if action == 'host_connect':
+            require(set(data) <= {'service', 'key'}, 400, 'Only service and key are accepted')
+            try:
+                return {'services': self.host.configure(data.get('service'), data.get('key'))}
+            except host_tools.HostToolError as error:
+                raise ApiError(400, str(error)) from error
+        if action == 'host_forget':
+            return {'services': self.host.forget(data.get('service'))}
+        if action == 'host_test':
+            service = data.get('service')
+            require(service in host_tools.SERVICES, 400, 'Unknown service')
+            # host_preflight takes a protocol record; the requirement goes under 'requires'. (RC passed the bare
+            # requirement, so the test made no call at all and reported success.)
+            result = await self.host_preflight({'requires': host_tools.parse_requires({'services': {service: {}}})},
+                                               raise_on_failure=False)
+            if not result.get('checks'):
+                result = {**result, 'ok': False, 'problems': ['No check was performed']}
+            return {'service': service, **result}
         if action == 'chats':
             return self.ui.chats(data)
         if action == 'chat':
-            return self.ui.chat(data)
+            return redact(self.ui.chat(data), self.export_secrets())
         if action == 'delete_template':
             return self.ui.delete_template(data)
         if action == 'trash':
@@ -253,6 +337,11 @@ class Service:
         require(payload is not None, 404, 'Run not found')
         if action == 'status':
             return self.status(owner, rid)
+        if action == 'preflight':
+            # Recheck a run's declared dependencies; read-only, never starts anything.
+            result = await self.host_preflight(self.load_protocol(owner, rid), raise_on_failure=False)
+            self.preflights[rid] = result
+            return result
         if action == 'delete_preview':
             require(not ({'owner', 'path'} & set(data)), 400, 'Client paths/owners are not accepted')
             return self.ui.deletion_preview(rid)
@@ -268,8 +357,24 @@ class Service:
             return await self.start(owner, rid, payload)
         if action == 'reconcile':
             return self.reconcile_interrupted(owner, rid)
+        if action == 'repair_preview':
+            try:
+                return integrity.plan_repair(self, owner, rid)
+            except integrity.IntegrityError as error:
+                raise ApiError(409, str(error)) from error
+        if action == 'repair_state':
+            require(data.get('confirm') is True, 400, 'Confirm the state repair first')
+            try:
+                return integrity.repair_state(self, owner, rid)
+            except integrity.IntegrityError as error:
+                raise ApiError(409, str(error)) from error
         if action == 'stop':
-            if payload.get('status') == 'RUNNING' and not (payload.get('execution') or {}).get('owner_alive'):
+            if payload.get('status') == 'error':
+                # The controller state cannot be read. Stopping must not depend
+                # on it: cancel execution first, then report recovery-required.
+                return await self.emergency_stop(owner, rid, payload.get('error'))
+            if payload.get('status') == 'RUNNING' and not (payload.get('execution') or {}).get('owner_alive') \
+                    and not self.has_task(owner, rid):
                 return self.reconcile_interrupted(owner, rid)
             queue = self.scheduler.describe(rid)
             if queue['queued'] and (not queue['entered_core'] or queue['recovery_required']) \
@@ -281,12 +386,28 @@ class Service:
                     raise ApiError(error.code, str(error)) from error
                 return {'run_id': rid, 'status': 'removed_from_queue',
                         'message': f"Removed from the queue; the run stays {payload.get('status')}."}
-            code, result = await h._stop_run_decision(owner, rid)
+            try:
+                code, result = await h._stop_run_decision(owner, rid)
+            except Exception as exc:  # unreadable ownership or control evidence
+                if self.has_task(owner, rid):
+                    return await self.emergency_stop(owner, rid, repr(exc), damaged=False)
+                raise ApiError(409, f'Stop could not read the run records: {exc}') from exc
+            detail = str(result.get('detail', ''))
+            if self.has_task(owner, rid) and (code >= 500 or 'unreadable' in detail.lower()):
+                # Work is still active and the durable Stop path failed: cancel
+                # execution anyway and report exactly that.
+                return await self.emergency_stop(owner, rid, detail, damaged=False)
             require(code < 400, code, result.get('detail', 'Stop refused'))
             if result.get('status') == 'stopped':
                 self.scheduler.forget(rid)
             return result
         if action == 'recover':
+            require(payload.get('status') != 'error', 409,
+                    'The run state is damaged. Use Repair state first; it halts the run without starting anything.')
+            protocol = self.load_protocol(owner, rid)
+            problems = proto.check_required_paths(protocol.get('required_paths'))
+            require(not problems, 409, 'Required project path missing: ' + '; '.join(problems))
+            self.preflights[rid] = await self.host_preflight(protocol)
             evidence = interrupted.diagnostics(self, owner, rid)
             require(not self.has_task(owner, rid), 409, 'A local task is still finishing; recovery is not yet safe')
             execution = payload.get('execution') or {}
@@ -294,17 +415,27 @@ class Service:
                     409, 'Recorded execution owner is live or uncertain; recovery refused')
             if evidence['eligible']:
                 self.reconcile_interrupted(owner, rid, retire_schedule=False)
+            await asyncio.to_thread(self.checkpoint_admission, owner, rid, payload, protocol)
             code, result = h._recover_run_decision(owner, rid)
             require(code < 400, code, result.get('detail', 'Recovery refused'))
             return result
         if action == 'export':
             require(payload.get('status') in ('HALTED','COMPLETED'), 409, 'Only HALTED or COMPLETED runs can export')
+            await self.settle_terminal(owner, rid)
+            await asyncio.to_thread(self.check_export_size, owner, rid, payload)
+            mode = data.get('delivery_mode')
+            require(mode is None or mode == 'download', 400, 'Use the configured delivery mode or choose download')
             record = await asyncio.to_thread(h._attempt_export, owner, rid)
-            return {'export':record}
-        if action in ('download', 'download_jsonl', 'export'):
+            out = {'export': record}
+            if record.get('status') == 'EXPORTED':
+                out.update(await asyncio.to_thread(self.deliver_export, owner, rid, record, mode))
+            return out
+        if action in ('download', 'download_jsonl'):
             await self.settle_terminal(owner, rid)
         if action == 'download':
+            await asyncio.to_thread(self.check_export_size, owner, rid, payload)
             files, manifest, _ = h._export_files(owner, rid)
+            files, manifest = fx.redact_delivery(files, manifest, self.export_secrets())
             return {'file_name':f'Magazine-{rid}-results.zip',
                     'file_data_b64':base64.b64encode(self.results_zip(owner, rid, files['results.zip'])).decode(),
                     'manifest':manifest}
@@ -323,7 +454,7 @@ class Service:
         # access. Continue redacting their exact bytes from historical exports.
         legacy = self.root / 'import-key'
         return (legacy.read_text().strip() if legacy.is_file() and not legacy.is_symlink() else None,
-                os.environ.get('PI_WEB_TOKEN'))
+                os.environ.get('PI_WEB_TOKEN'), *self.host.secrets())
 
     @staticmethod
     def protocol_view(protocol):
@@ -331,6 +462,7 @@ class Service:
                 'recovery': protocol['recovery'], 'loop_police': protocol['loop_police'],
                 'declared_mode': protocol.get('declared_mode', False),
                 'ignored_fields': protocol.get('ignored_fields', []),
+                'required_paths': protocol.get('required_paths', []),
                 'cartridges': {cid: {k: v for k, v in d.items() if k != 'dir'} for cid, d in protocol['cartridges'].items()}}
 
     async def settle_terminal(self, owner, rid):
@@ -345,6 +477,145 @@ class Service:
             await asyncio.wait_for(asyncio.shield(handle['task']), 10)
         except (asyncio.TimeoutError, Exception):
             pass
+
+    # ------------------------------------------------------ emergency STOP
+    async def emergency_stop(self, owner, rid, reason, damaged=True):
+        """Stop execution without depending on readable or writable run state.
+
+        Cancellation comes first and is reported exactly as observed. The run
+        is never presented as successfully halted: its state needs an explicit
+        repair. Evidence is written to a separate file beside the state.
+        """
+        cancellation = {'active_task': False, 'worker': 'none', 'task_ended': None}
+        try:
+            self.scheduler.forget(rid)  # nothing further may be dispatched for this run
+        except Exception:
+            pass
+        handle = h._RUN_HANDLES.get((owner, rid))
+        if handle is not None and not handle['task'].done():
+            cancellation['active_task'] = True
+            dispatch = handle['dispatch']
+            dispatch.operator_stop = True
+            try:
+                result = await dispatch.cancel_active()
+                cancellation['worker'] = 'abort_acknowledged' if result.confirmed else \
+                    ('no_active_worker' if not result.active else 'abort_unconfirmed')
+            except Exception as exc:
+                cancellation['worker'] = f'abort_failed: {type(exc).__name__}'
+            if cancellation['worker'] in ('abort_unconfirmed',) or cancellation['worker'].startswith('abort_failed'):
+                terminated = await dispatch.dispatch.terminate()
+                cancellation['worker'] = 'terminated' if terminated else 'termination_unconfirmed'
+            handle['task'].cancel()
+            try:
+                await asyncio.wait_for(asyncio.shield(handle['task']), 15)
+            except BaseException:
+                pass
+            cancellation['task_ended'] = handle['task'].done()
+        workers = interrupted.worker_evidence()
+        record = {'requested_at': h._now(), 'reason': str(reason or '')[:600], **cancellation,
+                  'worker_processes_after': workers['status'], 'state': 'recovery_required'}
+        try:
+            atomic_write(str(Path(h._state_dir(owner, rid)) / 'emergency-stop.json'),
+                         (json.dumps(record, indent=2) + '\n').encode(), prefix='.magazine_emergency_')
+            record['recorded'] = True
+        except OSError as exc:
+            record['recorded'] = False
+            record['record_error'] = str(exc)
+        stopped = cancellation['task_ended'] is not False and cancellation['worker'] not in ('termination_unconfirmed',)
+        if not stopped:
+            message = 'Stop was attempted but the worker could not be confirmed stopped; inspect the run.'
+        elif damaged:
+            message = ('Execution stopped. The run state is damaged, so the run was not marked HALTED; '
+                       'use Repair state to rebuild it from verified records. Nothing will resume.')
+        else:
+            message = ('Execution stopped, but the normal Stop record could not be completed ('
+                       + str(reason or 'unknown')[:200] + '). Check progress: the run is halted, or offers '
+                       'Reconcile or Repair state. Nothing will resume.')
+        return {'run_id': rid, 'status': 'emergency_stopped' if stopped else 'stop_unconfirmed', 'emergency': record,
+                'message': message}
+
+    # ------------------------------------------------------------ pi.10.2: where Finished Work goes
+    def export_roots(self):
+        allowed = [self.config['cwd']] + list(self.config.get('workerWritePaths') or []) \
+            + list(self.config.get('exportRoots') or [])
+        return allowed, PiDispatchModule.protected_roots(self.config)
+
+    def export_settings_view(self):
+        allowed, _ = self.export_roots()
+        prefs = fx.preferences(self.root)
+        mounts = fx.windows_mounts()
+        roots = [{'path': a, 'windows': fx.windows_path(a, mounts)} for a in allowed]
+        suggestion = os.path.join(self.config['cwd'], 'Magazine exports')
+        return {**prefs, 'folder_windows': fx.windows_path(prefs['folder'], mounts) if prefs['folder'] else None,
+                'roots': roots, 'suggestion': suggestion, 'suggestion_windows': fx.windows_path(suggestion, mounts)}
+
+    @staticmethod
+    def check_export_size(owner, rid, payload):
+        try:
+            size = sum(Path(CORE['rs'].result_path(h._state_dir(owner, rid), cid)).lstat().st_size
+                       for cid in payload.get('done', []))
+        except OSError:
+            raise ApiError(409, 'A canonical result is unavailable; Finished Work delivery refused') from None
+        require(size <= fx.MAX_EXPORT_BYTES // 2, 413,
+                'Canonical results exceed the size limit for a single download. Individual results remain available')
+
+    def deliver_export(self, owner, rid, record, mode=None):
+        """After the canonical export: hand it to the browser (default) or write it to the chosen folder."""
+        files, manifest, _ = h._export_files(owner, rid)
+        require((manifest['revision'], manifest['status']) == (record['revision'], record['run_status']), 409,
+                'Run changed during export. Retry after it has stopped')
+        files, manifest = fx.redact_delivery(files, manifest, self.export_secrets())
+        base = f"Magazine-{fx.slug(manifest.get('project_name'))}-{rid}"
+        prefs = fx.preferences(self.root)
+        if (mode or prefs['mode']) == 'folder':
+            allowed, protected = self.export_roots()
+            try:
+                saved = fx.deliver_to_folder(prefs['folder'], base, files, allowed=allowed, protected=protected)
+            except (ValueError, OSError) as error:
+                return {'delivery': {'mode': 'folder', 'ok': False, 'error': str(error)}}
+            return {'delivery': {'mode': 'folder', 'ok': True, **saved,
+                                 'windows_path': fx.windows_path(saved['container_path'])}}
+        try:
+            data = fx.zip_bytes(files)
+        except ValueError as error:
+            return {'delivery': {'mode': 'download', 'ok': False, 'error': str(error)}}
+        return {'delivery': {'mode': 'download', 'ok': True, 'file_name': base + '.zip',
+                             'file_data_b64': base64.b64encode(data).decode()}}
+
+    async def host_preflight(self, protocol, raise_on_failure=True):
+        """pi.10 dependency preflight: authenticated checks of declared host applications. Ordinary workflows
+        (no ``requires``) pass without any network call."""
+        requires = (protocol or {}).get('requires') or {}
+        if not requires.get('services'):
+            return {'ok': True, 'checks': [], 'problems': [], 'declared': False}
+        result = await asyncio.to_thread(self.host.preflight, requires)
+        result['declared'] = True
+        if raise_on_failure and not result['ok']:
+            raise ApiError(409, 'Dependency check failed; nothing was started: ' + '; '.join(result['problems'])
+                           + ' Fix this, then use Recheck dependencies or Start again.')
+        return result
+
+    def path_check(self, required, document=None):
+        problems = proto.check_required_paths(required)
+        hints = proto.windows_path_hints(document) if document else []
+        return {'required': required, 'missing': problems,
+                'windows_paths': hints,
+                'note': ('This workflow names Windows paths. Workers can use only folders mounted into the Pi '
+                         'container; add the project folder as a bind mount and list its container path in '
+                         'required_paths so a missing mount stops the run before it starts.') if hints else None}
+
+    def isolation_view(self):
+        abi = sandbox.abi_version()
+        mode = self.config.get('workerSandbox', 'required')
+        return {'mode': mode, 'landlock_abi': abi, 'enforced': mode == 'required' and abi >= sandbox.MIN_ABI,
+                'workspace': self.config.get('cwd'), 'extra_write_paths': self.config.get('workerWritePaths') or [],
+                'extra_read_paths': self.config.get('workerReadPaths') or [],
+                'limits': ['Network access is not restricted (Landlock network rules need kernel ABI 4).',
+                           'Before kernel ABI 6, workers can still signal (for example stop or kill) other '
+                           'processes of the same user, including Magazine and Pi.',
+                           'Workers cannot open Magazine files but can still change their permissions or times; '
+                           'Magazine detects and restores permissions.',
+                           'Any Pi host API reachable without a token remains reachable; keep PI_WEB_TOKEN set.']}
 
     # -------------------------------------------------------------- views
     def has_task(self, owner, rid):
@@ -384,10 +655,49 @@ class Service:
         value['source'] = 'retained_sessions_without_ledger'
         return value
 
+    def damaged_status(self, owner, rid, payload):
+        """A run whose controller state cannot be read: a complete, honest view."""
+        meta = h._load_meta(owner, rid)
+        base = h._run_base(owner, rid)
+        try:
+            ledger = lg.load(base)
+        except ValueError:
+            ledger = None
+        try:
+            order = [c['id'] for c in CORE['doc'].load_document(h._mag_path(owner, rid)).document['cartridges']]
+        except Exception:
+            order = list((ledger or {}).get('order') or [])
+        emergency = None
+        try:
+            emergency = json.loads((Path(h._state_dir(owner, rid)) / 'emergency-stop.json').read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            pass
+        try:
+            protocol = self.load_protocol(owner, rid)
+        except Exception:
+            protocol = {'handover_mode': None, 'recovery': {}, 'loop_police': {'enabled': False}}
+        payload.update(status='STATE_INVALID', display_status='STATE_INVALID', state_error=payload.get('error'),
+                       done=[], todo=[], current_cartridge=None, order=order, name=meta.get('name'),
+                       project_id=meta.get('project_id'), cartridge_models=meta.get('cartridge_models', {}),
+                       created_at=meta.get('created_at'), model_map=meta.get('model_map'), tool_ids=meta.get('tool_ids'),
+                       export=None, queue=self.scheduler.describe(rid), ledger=lg.summary(ledger),
+                       tokens=(ledger or {}).get('tokens') or tokens.total([]), active=self.has_task(owner, rid),
+                       reconciliation=None, execution=None, control=None, emergency_stop=emergency,
+                       protocol={'handover_mode': protocol.get('handover_mode'), 'legacy': protocol.get('legacy', False),
+                                 'recovery': protocol.get('recovery'), 'antiloop': protocol['loop_police'].get('enabled'),
+                                 'antiloop_frozen': protocol.get('antiloop_frozen', False)},
+                       repair={'available': not self.has_task(owner, rid),
+                               'detail': 'Magazine cannot read this run\'s controller state. Stop is still available; '
+                                         'Repair state keeps the damaged file as evidence and rebuilds a HALTED state '
+                                         'from Magazine\'s verified records without starting anything.'})
+        return payload
+
     def status(self, owner, rid):
         payload = h._status_payload(owner, rid)
         if not payload:
             return payload
+        if payload.get('status') == 'error':
+            return self.damaged_status(owner, rid, payload)
         meta = h._load_meta(owner, rid)
         base = h._run_base(owner, rid)
         try:
@@ -411,6 +721,13 @@ class Service:
         payload['active'] = self.has_task(owner, rid)
         payload['reconciliation'] = interrupted.diagnostics(self, owner, rid)
         payload['order'] = [c['id'] for c in CORE['doc'].load_document(h._mag_path(owner, rid)).document['cartridges']]
+        payload['required_paths'] = self.path_check(protocol.get('required_paths', []))
+        if protocol.get('requires'):
+            payload['dependencies'] = {'declared': protocol['requires'], 'last_check': self.preflights.get(rid)}
+        if protocol.get('project_checkpoint'):
+            payload['project_checkpoint'] = {'root': protocol['project_checkpoint']['root'],
+                                             'required': protocol['project_checkpoint']['required']}
+        payload['isolation'] = {'mode': self.config.get('workerSandbox', 'required'), 'landlock_abi': sandbox.abi_version()}
         return payload
 
     def list_runs(self):
@@ -437,8 +754,9 @@ class Service:
                     models = meta.get('cartridge_models') or {}
                     record = ((value or {}).get('cartridges') or {}).get(current) or {}
                     tokens_value = (value or {}).get('tokens')
-                    runs.append({'run_id': run.name, 'status': payload['status'],
-                                 'display_status': self.display_status(payload, run.name),
+                    invalid = payload['status'] == 'error'
+                    runs.append({'run_id': run.name, 'status': 'STATE_INVALID' if invalid else payload['status'],
+                                 'display_status': 'STATE_INVALID' if invalid else self.display_status(payload, run.name),
                                  'name': meta.get('name'), 'project_id': meta.get('project_id'),
                                  'created_at': meta.get('created_at'), 'done': done, 'todo': todo,
                                  'current_cartridge': payload.get('current_cartridge'),
@@ -620,7 +938,7 @@ class Service:
                 [c['id'] for c in document['cartridges']], {m['id'] for m in cat['models']})
             applied_plan['manual_overrides'] = {c['id']: models[c['job_type']] for c in document['cartridges']
                 if models[c['job_type']] != applied_plan['cartridge_models'][c['id']]}
-        protocol.update(version=proto.PROTOCOL_VERSION, prepared_by=VERSION, antiloop_frozen=False)
+        protocol.update(version=proto.protocol_version(protocol), prepared_by=VERSION, antiloop_frozen=False)
         rid = uuid.uuid4().hex[:12]
         Path(h._state_dir(owner,rid)).mkdir(parents=True,mode=0o700)
         atomic_write(h._mag_path(owner,rid),(json.dumps(document)+'\n').encode())
@@ -642,6 +960,26 @@ class Service:
         cid = payload.get('current_cartridge') or next(iter(payload.get('todo') or []), None)
         return cid, len(((value.get('cartridges') or {}).get(cid) or {}).get('attempts') or [])
 
+    def checkpoint_admission(self, owner, rid, payload, protocol):
+        decl = protocol.get('project_checkpoint')
+        if not decl:
+            return
+        base = h._run_base(owner, rid)
+        current = payload.get('current_cartridge') or next(iter(payload.get('todo') or []), None)
+        ledger = lg.load(base)
+        if ex.resumable_completion(ledger, current):
+            return  # The executor verifies and replays this attempt before model dispatch.
+        records = (ledger or {}).get('cartridges', {})
+        done = payload.get('done') or []
+        expected = [cid for cid in decl['steps'] if cid in done and (decl['required'] or any(
+            attempt.get('checkpoint') for attempt in records.get(cid, {}).get('attempts', [])))]
+        doc = CORE['doc'].load_document(h._mag_path(owner, rid)).document
+        book = ex.checkpoint_book(self.config, protocol, doc, base, rid)
+        try:
+            book.admission(expected)
+        except cpt.CheckpointError as exc:
+            raise ApiError(409, f'Checkpoint preflight failed: {exc}') from None
+
     async def start(self, owner, rid, payload):
         if payload.get('status') == 'RUNNING' and not (payload.get('execution') or {}).get('owner_alive'):
             self.reconcile_interrupted(owner, rid, retire_schedule=False)
@@ -653,6 +991,10 @@ class Service:
         ok, code, detail = h._start_precheck(payload,'pi-host-access')
         require(ok, code, detail)
         self.admission_checks(owner, rid, payload)
+        # pi.10: declared host applications are checked before any model is started.
+        protocol = self.load_protocol(owner, rid)
+        await asyncio.to_thread(self.checkpoint_admission, owner, rid, payload, protocol)
+        self.preflights[rid] = await self.host_preflight(protocol)
         loaded = CORE['doc'].load_document(h._mag_path(owner,rid))
         cat = await self.catalogue()
         errors = h._validate_admission(loaded.document,payload['model_map'],payload['tool_ids'],cat['models'],cat['tools'])
@@ -682,9 +1024,15 @@ class Service:
     def admission_checks(self, owner, rid, payload):
         base = h._run_base(owner, rid)
         ex.reconcile(base, self.has_task(owner, rid))
-        self.load_protocol(owner, rid)
+        protocol = self.load_protocol(owner, rid)
+        required = list(protocol.get('required_paths') or [])
+        if protocol.get('project_checkpoint'):
+            required.append(protocol['project_checkpoint']['root'])
+        problems = proto.check_required_paths(required)
+        require(not problems, 409, 'Required project path missing; nothing was started: ' + '; '.join(problems)
+                + '. Mount the project folder into the Pi container, then Start again.')
         cid, used = self.attempts_used(owner, rid, payload)
-        require(used < lg.HARD_CEILING, 409,
+        require(used < lg.HARD_CEILING or ex.resumable_completion(lg.load(base), cid), 409,
                 f'{cid} has used all {lg.HARD_CEILING} attempts; Magazine will not start a sixth attempt')
 
     async def _launch(self, entry):
@@ -696,6 +1044,9 @@ class Service:
         self.admission_checks(owner, rid, payload)
         base = h._run_base(owner, rid)
         protocol = self.load_protocol(owner, rid)
+        await asyncio.to_thread(self.checkpoint_admission, owner, rid, payload, protocol)
+        # A queued run may wait a long time: recheck its declared host applications when it is admitted.
+        self.preflights[rid] = await self.host_preflight(protocol)
         # Recheck native model/tool availability before admission; READY remains
         # untouched on failure. Only server configuration supplies worker paths.
         loaded = CORE['doc'].load_document(h._mag_path(owner,rid))
@@ -703,9 +1054,11 @@ class Service:
             cat = await self.catalogue()
             errors = h._validate_admission(loaded.document,payload['model_map'],payload['tool_ids'],cat['models'],cat['tools'])
             require(not errors,400,'; '.join(errors))
-        if not protocol.get('legacy') and not protocol.get('antiloop_frozen'):
+        if not protocol.get('legacy') and (not protocol.get('antiloop_frozen')
+                or protocol.get('version') != proto.protocol_version(protocol)):
             # Freeze the effective Antiloop choice for this run's execution.
-            protocol.update(antiloop_frozen=True, frozen_at=h._now())
+            protocol.setdefault('frozen_at', h._now())
+            protocol.update(antiloop_frozen=True, version=proto.protocol_version(protocol))
             self.save_protocol(owner, rid, protocol)
         try:
             prepared = CORE['rp'].prepare_run(h._mag_path(owner,rid),base,owner)
@@ -741,6 +1094,9 @@ class Service:
 
 async def main():
     config = json.loads(sys.argv[2])
+    # This dedicated process runs nothing but workers, so orphans re-parented
+    # to it can only be worker descendants: adopt and reap them.
+    PiDispatchModule.become_subreaper()
     service = Service(sys.argv[1],config)
     loop = asyncio.get_running_loop()
     reader = asyncio.StreamReader(limit=12*1024*1024)

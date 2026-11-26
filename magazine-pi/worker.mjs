@@ -17,6 +17,11 @@ const send = value => process.stdout.write(JSON.stringify(value) + '\n');
 console.log = (...args) => console.error(...args);
 
 export const PUBLISHER_TOOL = 'magazine_publish_result';
+export const HOST_TOOL = 'magazine_host';
+export const CHECKPOINT_TOOL = 'magazine_checkpoint';
+const RESERVED_TOOLS = new Set([PUBLISHER_TOOL, HOST_TOOL, CHECKPOINT_TOOL]);
+const HOST_TIMEOUT_MS = 150000;
+const pendingHost = new Map();
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const TOOL_NAME = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/;
 const MAX_RESULT_BYTES = 1024 * 1024;
@@ -180,17 +185,72 @@ export function publisherTool(publish, getSessionId, notify) {
   };
 }
 
+/** pi.10: host-application tools. Credentials and URLs stay with Magazine; this process only forwards the
+ * model's arguments over its private channel and returns Magazine's answer. */
+export function hostTools(spec, notify) {
+  if (!spec) return [];
+  const call = (kind, payload) => new Promise((resolve, reject) => {
+    const id = crypto.randomUUID();
+    const timer = setTimeout(() => { pendingHost.delete(id); reject(new Error('Magazine did not answer the host call in time')); }, HOST_TIMEOUT_MS);
+    pendingHost.set(id, { resolve: v => { clearTimeout(timer); resolve(v); }, reject: e => { clearTimeout(timer); reject(e); } });
+    notify({ event: 'host_call', id, kind, ...payload });
+  });
+  const reply = value => ({ content: [{ type: 'text', text: JSON.stringify(value) }], details: value });
+  const tools = [];
+  const services = Object.keys(spec.services || {});
+  if (services.length) tools.push({
+    name: HOST_TOOL, label: 'Host application', description: String(spec.description || ''),
+    parameters: { type: 'object', additionalProperties: false, required: ['service', 'operation'], properties: {
+      service: { type: 'string', enum: services },
+      operation: { type: 'string', description: 'One of the operations listed for that service.' },
+      arguments: { type: 'object', description: 'JSON object of the operation\'s own arguments.' } } },
+    async execute(toolCallId, params) {
+      return reply(await call('host', { service: String(params?.service ?? ''), operation: String(params?.operation ?? ''),
+        args: params?.arguments ?? {} }));
+    },
+  });
+  if (spec.checkpoint) tools.push({
+    name: CHECKPOINT_TOOL, label: 'Validate project checkpoint', description: String(spec.checkpoint),
+    parameters: { type: 'object', additionalProperties: false, properties: {} },
+    async execute() { return reply(await call('checkpoint', {})); },
+  });
+  return tools;
+}
+
+export function deliverHostResult(message) {
+  const waiter = pendingHost.get(String(message?.id ?? ''));
+  if (!waiter) return false;
+  pendingHost.delete(String(message.id));
+  if (message.ok === true) waiter.resolve(message.result);
+  else waiter.reject(new Error(String(message.error || 'Magazine refused the host call')));
+  return true;
+}
+
 function textOf(message) {
   return (message?.content || []).filter(p => p.type === 'text').map(p => p.text).join('\n');
 }
 
 // ---------------------------------------------------------------- execution
+const TOOL_PREFIX_SDKS = new Set(['1.5.2']);
+
+export function sandboxEvidence() {
+  try { return process.env.MAGAZINE_SANDBOX ? JSON.parse(process.env.MAGAZINE_SANDBOX) : null; } catch { return null; }
+}
+
 export async function execute(request, onSession = () => {}, shouldAbort = () => false, notify = send) {
+  // The launcher confines this process before Node starts; refuse to run a
+  // model at all if Magazine required that confinement and it is absent.
+  const confinement = sandboxEvidence();
+  if (request.requireSandbox && !confinement) throw new Error('Worker sandbox evidence missing; refusing to start inference');
   const { sdk, version } = await loadSdk(request);
+  // The tool domain relies on the SDK prepending shellCommandPrefix to every
+  // shell command on its own line; refuse SDKs where that was not verified.
+  if (request.shellCommandPrefix && (request.tools || []).includes('bash') && !TOOL_PREFIX_SDKS.has(version))
+    throw new Error(`Worker sandbox: Pi SDK ${version} is not verified to run shell commands in the tool domain`);
   const { ModelRuntime, DefaultResourceLoader, SettingsManager, SessionManager, createAgentSession } = sdk;
   const runtime = await ModelRuntime.create({authPath:path.join(request.agentDir,'auth.json'),
     modelsPath:path.join(request.agentDir,'models.json'),
-    modelsStorePath:path.join(request.dataDir,'models-store.json'), allowModelNetwork:false});
+    modelsStorePath:request.modelsStorePath || path.join(request.dataDir,'models-store.json'), allowModelNetwork:false});
   if (runtime.getError()) throw new Error(`Pi model configuration: ${runtime.getError()}`);
   const discovery=await syncOllamaModels(runtime,path.join(request.agentDir,'models.json'));
   const models = (await runtime.getAvailable()).filter(m => runtime.getPhysicalModel(m.provider, m.id))
@@ -201,13 +261,18 @@ export async function execute(request, onSession = () => {}, shouldAbort = () =>
   if (!isCatalogue && !selected) throw new Error(`Assigned model unavailable: ${request.model}`);
   if (isCatalogue && !models.length) return {models:[],tools:[],piVersion:version,ollama:discovery.status};
   const requested = isCatalogue ? [] : (request.tools || []);
-  if (!Array.isArray(requested) || requested.some(t => typeof t !== 'string' || !TOOL_NAME.test(t) || t === PUBLISHER_TOOL))
+  if (!Array.isArray(requested) || requested.some(t => typeof t !== 'string' || !TOOL_NAME.test(t) || RESERVED_TOOLS.has(t)))
     throw new Error('Invalid tool allowlist entry');
-  const expectedTools = [...requested, ...(request.publish ? [PUBLISHER_TOOL] : [])];
+  const extraTools = isCatalogue ? [] : hostTools(request.host, notify);
+  const expectedTools = [...requested, ...(request.publish ? [PUBLISHER_TOOL] : []), ...extraTools.map(t => t.name)];
   // Unchanged pi.5 resource policy: no extensions, skills, prompt templates,
   // themes, context files, compaction, automatic retry or cache warming.
+  // When confined, every shell command re-executes itself inside the nested
+  // tool domain first (sandbox.py TOOL_PREFIX), away from this process's
+  // channel to Magazine and from the attempt's session/publication folders.
   const settingsManager = SettingsManager.inMemory({packages:[],extensions:[],skills:[],prompts:[],themes:[],
-    compaction:{enabled:false},retry:{enabled:false,provider:{maxRetries:0}},cacheWarming:{mode:'off'}});
+    compaction:{enabled:false},retry:{enabled:false,provider:{maxRetries:0}},cacheWarming:{mode:'off'},
+    ...(request.shellCommandPrefix ? {shellCommandPrefix:request.shellCommandPrefix} : {})});
   const resourceLoader = new DefaultResourceLoader({cwd:request.cwd,agentDir:request.agentDir,settingsManager,
     noExtensions:true,noSkills:true,noPromptTemplates:true,noThemes:true,noContextFiles:true,
     additionalExtensionPaths:request.extensionPaths || [],
@@ -218,7 +283,8 @@ export async function execute(request, onSession = () => {}, shouldAbort = () =>
   if (extensionErrors?.length) throw new Error('Configured worker extension failed to load');
   const sessionManager = isCatalogue ? SessionManager.inMemory(request.cwd) :
     SessionManager.create(request.cwd,request.sessionDir);
-  const customTools = request.publish ? [publisherTool(request.publish, () => sessionManager.getSessionId(), notify)] : [];
+  const customTools = [...(request.publish ? [publisherTool(request.publish, () => sessionManager.getSessionId(), notify)] : []),
+    ...extraTools];
   const {session,modelFallbackMessage} = await createAgentSession({cwd:request.cwd,agentDir:request.agentDir,
     // Catalogue builds an in-memory discovery session only. Execution always
     // uses the exact selected model validated above, with no fallback.
@@ -237,7 +303,7 @@ export async function execute(request, onSession = () => {}, shouldAbort = () =>
     if (session.messages.length !== 0) throw new Error('Worker context was not fresh');
     if (shouldAbort()) throw new Error('Worker stopped before inference');
     notify({event:'session',id:sessionManager.getSessionId(),file:sessionManager.getSessionFile(),sdkVersion:version,
-      activeTools:session.getActiveToolNames().sort()});
+      activeTools:session.getActiveToolNames().sort(),sandbox:confinement});
     let signalled=false;
     const unsubscribe=session.subscribe(event=>{
       try {
@@ -284,6 +350,8 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const input = readline.createInterface({input:process.stdin});
   process.stdin.on('end',async()=>{ if(session?.isStreaming) await session.abort(); process.exit(1); });
   input.on('line',async line=>{
+    // pi.10: answers to this worker's own host calls arrive while the session runs.
+    try { const early=JSON.parse(line); if (early?.action==='host_result') { deliverHostResult(early); return; } } catch {}
     try {
       const value=JSON.parse(line);
       if (value.action==='abort') {

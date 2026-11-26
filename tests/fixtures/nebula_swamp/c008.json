@@ -1,0 +1,98 @@
+{
+  "step_id": "c008",
+  "project_root": "/workspace/Unreal Projects/NebulaSwamp",
+  "status": "HALT",
+  "title": "Open or create a minimal supported UE5 project at the resolved root — blocked, no supported project-creation/open route reachable on Pi",
+  "timestamp": "2026-11-24T15:20:00Z",
+  "canonical_paths": {
+    "pi_root": "/workspace/Unreal Projects/NebulaSwamp",
+    "windows_host_root": "E:\\Unreal projects\\NebulaSwamp",
+    "mount": "E:\\ -> /workspace/Unreal Projects (9p rw, drvfs)",
+    "resource_kit_source": "/projects/3D kit",
+    "resource_kit_read_only": true
+  },
+  "predecessor_verification": {
+    "state.json_last_committed_step": "c007",
+    "state.json_completed_steps": ["c001", "c002", "c003", "c004", "c005", "c006", "c007"],
+    "c007_status": "DONE",
+    "c007_report_hash_on_disk": "b3f06f1b3c0e089ef5a779faec079ea2fec15c790923acadcb812d3435c62ce5",
+    "state_recorded_last_report_hash": "25cfbae1861732fc777641608990fe4c765ff6db9b7299e036907a857b19dee4",
+    "note": "The hash recorded in state.json (25cfbae...) does not match the sha256 of the current on-disk .magazine-level-v2/c007.json (b3f06f1...). The predecessor report content is intact and its own documented evidence hashes (evidence/c007_bridge_contract.json 57d2f3db..., docs/c007_bridge_contract.md 1e7ec543...) verify. The reported-hash mismatch was NOT independently verified as the c006 proof; c006 was verified in c007 as DONE with sha256 3ad5dada9d5faab09ef7d40ae2fc91bbef52203a8faa600ea5ec45fdf4b11bca. Flagged for reviewer, not the cause of this halt.",
+    "predecessor_valid": true
+  },
+  "task": {
+    "objective": "Use an existing authorised project OR create a minimal supported UE5 project at the resolved root through a supported workflow. Do not upgrade the engine, install plugins, or change unrelated projects.",
+    "acceptance_targets": {
+      "one_intended_uproject": "Exactly one intended .uproject validates or opens",
+      "existing_content_preserved": "existing content preserved",
+      "engine_version_recorded": "actual engine version recorded"
+    }
+  },
+  "supported_route_availability": {
+    "connector": {
+      "status": "unreachable",
+      "documented_endpoint": "http://127.0.0.1:8765",
+      "probe": "ECONNREFUSED (ConnectionRefusedError) on 8765; 8766/8767/8888/8000/8080/9000/8443/443/10000 all closed",
+      "app": "Unreal Connector (uehl) — Windows desktop application, NOT installed on this Pi session",
+      "binary_or_process": "none found (which/proc scan empty)"
+    },
+    "host_ue_project": {
+      "exists_on_pi_mount": false,
+      "uproject_count": 0,
+      "umap_count": 0,
+      "uasset_count": 0,
+      "searched": ["/workspace/Unreal Projects/NebulaSwamp", "/workspace/Unreal Projects/3D-Library", "/workspace", "whole reachable Pi filesystem"],
+      "host_side_path": "E:\\Unreal projects\\NebulaSwamp\\NebulaSwamp.uproject (documented-only, not verified — connector unavailable)"
+    },
+    "local_ue_automation": {
+      "UAT/UE5-Cmd/UE5-Editor/AutomationTool": "not present on Pi",
+      "python unreal module": "import failed — not available",
+      "local_project_automator": "none discovered",
+      "note": "The Connector is the intended route to host-side project open/create. No local UE automation or project-creation tool is available on this Pi session."
+    },
+    "resource_kit_role": "3D Resource Kit provides asset discovery only (find/inspect/download/bookmark) — it does NOT open or create a UE project. It is not a supported c008 route."
+  },
+  "halt_reason": {
+    "blocker": "No supported route to open an existing authorised project or to create a minimal supported UE5 project. The only sanctioned route is the Unreal Connector (host-side), which is absent from this Pi session (port :8765 refused; no uehl binary/process); no UE project or engine files exist on the Pi mount; and no local UE project-creation automation (UAT/UE5-Cmd/python unreal) is available. This is an environmental constraint on the Pi worker, not a code/tool failure.",
+    "why_not_fabricated": "The acceptance contract requires exactly one intended .uproject that 'validates or opens'. Hand-writing a .uproject on the Pi mount would create an unvalidated file that cannot be proven to open/validate, and would constitute a substitute project in a mount whose host-side identity cannot be confirmed open here. This violates 'Never create a substitute project in an unmounted workspace' and the 'actual checks' requirement. Correct call per acceptance (mandatory runtime/integration failure) is HALT, not fabrication.",
+    "not_broadened": "No later-step work (menus c105-c116, maps, content) started; no engine/plugin/upgrade; no unrelated project touched."
+  },
+  "optional_limitations": {
+    "engine_version": "measurement_unavailable — enumerable only on the host via the Connector; cannot be read on Pi. Recorded, not inferred.",
+    "uproject_validates_or_opens": "unverified — no project opened; no validation run. Not called a pass.",
+    "existing_content_preserved": "nothing on the Pi mount was changed; prior content (c001-c007) preserved; host-side project files not reachable to touch.",
+    "screenshot_optional": "measurement_unavailable — needs a live host editor via the Connector."
+  },
+  "runtime_checks_performed": [
+    "verified predecessor c007 DONE (c006 proof recorded in c007 as DONE, sha256 3ad5dada9d5faab09ef7d40ae2fc91bbef52203a8faa600ea5ec45fdf4b11bca); state.json last_committed_step=c007",
+    "probed documented connector endpoint 127.0.0.1:8765 via Python socket -> ConnectionRefusedError; 8766/8767/8888/8000/8080/9000/8443/443/10000 all closed",
+    "scanned for uehl/Unreal binary and process (which + ps): none present",
+    "scanned reachable Pi filesystem for .uproject/.umap/.uasset: zero found",
+    "confirmed no local UE automation present (no UAT/UE5-Cmd/UE5-Editor/AutomationTool; python unreal import failed)",
+    "confirmed 3D Resource Kit role is asset discovery only (find/inspect/download/bookmark) per c002 openapi evidence, not a project-creation/open route",
+    "verified 9p rw mount E:\\ -> /workspace/Unreal Projects (mount table entry) and single project identity; realpath resolved, no symlink escape",
+    "recorded state.json sha256 pre-change (68982fcf...): no project created, no fabrication of a .uproject",
+    "one engine instance / one LLM respected: no engine or editor started, no connector session, no job submitted"
+  ],
+  "limitations": [
+    "Unreal Connector (uehl) is a Windows application NOT installed on this Pi session; opening an existing authorised project or creating a supported UE5 project requires the host-side Connector, which is unreachable here",
+    "No UE project or engine files exist on the Pi mount; host-side project path E:\\Unreal projects\\NebulaSwamp\\NebulaSwamp.uproject is documented-only, not verified",
+    "No local UE project-creation automation available on Pi",
+    "Engine version and project validation are measurement_unavailable — cannot be read or run from Pi",
+    "No .uproject was created (intentionally) to avoid an unvalidated substitute project; per acceptance this is recorded, not a pass"
+  ],
+  "changes": [
+    "created /workspace/Unreal Projects/NebulaSwamp/.magazine-level-v2/c008.json (this HALT report)",
+    "no project or UE files created or modified; prior content preserved"
+  ],
+  "evidence_paths": [
+    "/workspace/Unreal Projects/NebulaSwamp/.magazine-level-v2/c008.json",
+    "/workspace/Unreal Projects/NebulaSwamp/.magazine-level-v2/state.json"
+  ],
+  "blocker_paths": [
+    "no supported open/create route: Unreal Connector (uehl) absent on Pi; documented endpoint 127.0.0.1:8765 refused",
+    "host UE project files not present on Pi mount; host-side .uproject path unverified (connector unavailable)",
+    "no local UE automation binary (UAT/UE5-Cmd/UE5-Editor) or python unreal module available on Pi"
+  ],
+  "sha256_of_changed_regular_files": {}
+}

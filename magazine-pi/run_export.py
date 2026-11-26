@@ -49,7 +49,7 @@ _ASSIGNMENT = re.compile(r'''(?i)(["']?(?:api[_-]?key|access[_-]?token|refresh[_
 
 def redact(value, secrets=()):
     if isinstance(value, dict):
-        return {k: '[REDACTED]' if re.sub(r'[-_]', '', k).lower() in _SECRET_KEYS
+        return {redact(k, secrets): '[REDACTED]' if re.sub(r'[-_]', '', k).lower() in _SECRET_KEYS
                 else redact(v, secrets) for k, v in value.items()}
     if isinstance(value, list):
         return [redact(v, secrets) for v in value]
@@ -62,6 +62,31 @@ def redact(value, secrets=()):
         value = re.sub(r'(https?://)[^/@\s]+:[^/@\s]+@', r'\1[REDACTED]@', value)
         return _ASSIGNMENT.sub(lambda m: m[1] + '"[REDACTED]"', value)
     return value
+
+
+ATTEMPT_DIR = re.compile(r'[a-f0-9]{32}\Z')
+
+
+def session_sources(root):
+    """Retained session files: flat (pi.5-pi.8) or per-attempt folders (sandboxed workers)."""
+    root = Path(root)
+    try:
+        with directory(root / 'sessions') as fd:
+            names = sorted(os.listdir(fd))
+    except FileNotFoundError:
+        return []
+    sources = []
+    for name in names:
+        if name.endswith('.jsonl'):
+            sources.append('sessions/' + name)
+        elif ATTEMPT_DIR.fullmatch(name):
+            try:
+                with directory(root / 'sessions' / name) as fd:
+                    inner = sorted(n for n in os.listdir(fd) if n.endswith('.jsonl'))
+            except (FileNotFoundError, NotADirectoryError):
+                continue
+            sources += [f'sessions/{name}/{n}' for n in inner]
+    return sources
 
 
 def export_run(root, rid, secrets=()):
@@ -99,13 +124,8 @@ def export_run(root, rid, secrets=()):
         def assigned(c):
             return meta.get('cartridge_models', {}).get(c['id'], meta.get('model_map', {}).get(c['job_type']))
         sessions, session_bytes = [], {}
-        try:
-            with directory(root / 'sessions') as fd:
-                names = sorted(n for n in os.listdir(fd) if n.endswith('.jsonl'))
-        except FileNotFoundError:
-            names = []
-        for name in names:
-            source = 'sessions/' + name
+        names = session_sources(root)
+        for source in names:
             raw = read_file(root, source)
             session_bytes[source] = raw
             # An active SDK writer may not yet have committed its last line.
@@ -182,12 +202,7 @@ def export_run(root, rid, secrets=()):
         for source, raw in session_bytes.items():
             if not read_file(root, source).startswith(raw):
                 raise ExportError('Session changed during export; retry the download')
-        try:
-            with directory(root / 'sessions') as fd:
-                after_names = sorted(n for n in os.listdir(fd) if n.endswith('.jsonl'))
-        except FileNotFoundError:
-            after_names = []
-        if after_names != names:
+        if session_sources(root) != names:
             raise ExportError('Run changed during export; retry the download')
     except (OSError, ValueError, KeyError, TypeError) as error:
         if isinstance(error, ExportError):

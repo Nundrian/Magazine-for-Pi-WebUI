@@ -10,7 +10,7 @@ plugin=ROOT/'magazine-pi'
 VERSION=json.loads((plugin/'manifest.json').read_text())['version']
 for name in ('INSTALL.md','SECURITY.md','ACCEPTANCE.md','UI-STYLING.md','MODELS-AND-JSONL.md','SIMPLIFICATION.md',
              'COMPATIBILITY.md','TESTING.md','PI6-REPORT.md','PI7-SCHEDULER.md',
-             'UI8-OPERATOR-GUIDE.md','UI8-REPORT.md','UI8-ALIGNMENT.md','LINUX-STORAGE.md','IMPORT-REPAIR.md','RESTART-RECOVERY.md','AUTOMATIC-MODELS.md'):
+             'UI8-OPERATOR-GUIDE.md','UI8-REPORT.md','UI8-ALIGNMENT.md','LINUX-STORAGE.md','IMPORT-REPAIR.md','RESTART-RECOVERY.md','AUTOMATIC-MODELS.md','PI9-RELIABILITY.md','PI10-HOST-TOOLS.md','PI103-CORRECTIVE.md'):
     (plugin/'docs').mkdir(exist_ok=True)
     shutil.copy2(ROOT/'docs'/name,plugin/'docs'/name)
 reuse=json.loads((plugin/'reused-components.json').read_text())
@@ -46,7 +46,8 @@ def build(name,entries):
 (ROOT/'dist').mkdir(exist_ok=True)
 plugin_files=list(public_files(plugin))+[plugin/'LICENSE']
 plugin_entries=[('magazine-pi/'+str(p.relative_to(plugin)).replace('\\','/'),p) for p in plugin_files]
-source_files=plugin_files+[ROOT/p for p in ('README.md','LICENSE','requirements-test.txt','requirements-browser-test.txt','pytest.ini','.gitignore')]
+source_files=plugin_files+[ROOT/p for p in ('README.md','CHANGELOG.md','LICENSE','requirements-test.txt',
+    'requirements-browser-test.txt','pytest.ini','.gitignore','.gitattributes','TODO.md','docs/images/overview-annotated.jpg')]
 for directory in ('docs','scripts','tests'):
     source_files.extend(p for p in public_files(ROOT/directory)
         if p.name not in ('HOST-CONFIGURATION-RESTORATION.md','PERSISTENT-AUTH-INVESTIGATION.md',

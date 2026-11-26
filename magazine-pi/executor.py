@@ -13,16 +13,20 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import uuid
 from pathlib import Path
 from types import SimpleNamespace
 
 import antiloop
+import checkpoint as cpt
 import handover as ho
+import host_tools
+import integrity
 import ledger as lg
 import protocol as proto
 import tokens
-from pi_dispatch import PiDispatch, WorkerFailure
+from pi_dispatch import PiDispatch, SandboxUnavailable, WorkerFailure, protected_roots, sandbox_mode
 from scheduler import QueueStopped
 
 HARD_WORKER_ERRORS = (
@@ -31,7 +35,32 @@ HARD_WORKER_ERRORS = (
     "Requested tool unavailable", "Assigned model unavailable", "Invalid tool allowlist entry",
     "Magazine has not verified Pi SDK", "Pi SDK at", "Pi SDK not found", "Pi model configuration",
     "Configured worker extension failed", "Pi dispatch response identity mismatch",
+    "Worker sandbox",
 )
+# Deterministic incompatibilities: the same model/backend will fail the same
+# way again, so the run halts at once instead of spending further attempts.
+MODEL_INCOMPATIBLE = re.compile(
+    r"unknown model architecture|unsupported model architecture|model architecture .{0,40}not supported|"
+    r"does not support (tools|chat|thinking|completion|generate)|error loading model|failed to load model|"
+    r"model .{0,80} not found|try pulling it|no such model", re.I)
+# Possibly transient (a restarting server, memory held by another model): one
+# fresh retry is allowed; an identical second failure stops without progress.
+PROVIDER_UNAVAILABLE = re.compile(
+    r"ECONNREFUSED|connection refused|fetch failed|ENOTFOUND|EHOSTUNREACH|ENETUNREACH|"
+    r"connect ETIMEDOUT|socket hang up|Connection error|requires more system memory", re.I)
+
+
+def classify_model_error(message):
+    """A model/provider failure that retrying cannot fix, or None."""
+    text = str(message or "")
+    if MODEL_INCOMPATIBLE.search(text):
+        return ho.ResultFailure("MODEL_INCOMPATIBLE", "The model backend cannot run this model as configured: "
+                                + text[:600], "hard")
+    if PROVIDER_UNAVAILABLE.search(text):
+        return ho.ResultFailure("PROVIDER_UNAVAILABLE", "The model provider is not reachable or cannot load the "
+                                "model now (for example Ollama is stopped). One fresh retry is made; if it fails the "
+                                "same way the run halts: " + text[:600], "repair")
+    return None
 
 
 class CartridgeFailed(RuntimeError):
@@ -51,7 +80,7 @@ class Stopped(Exception):
 def classify_worker_error(message):
     if any(message.startswith(prefix) for prefix in HARD_WORKER_ERRORS):
         return ho.ResultFailure("WORKER_INTEGRITY", message, "hard")
-    return ho.ResultFailure("WORKER_FAILED", message, "repair")
+    return classify_model_error(message) or ho.ResultFailure("WORKER_FAILED", message, "repair")
 
 
 def effective_timeout(protocol, config):
@@ -60,6 +89,14 @@ def effective_timeout(protocol, config):
     if type(explicit) is int and 0 < explicit < seconds:
         return explicit  # an explicitly configured smaller limit is respected
     return seconds
+
+
+CONTROLLER_BOUNDARY = (
+    "MAGAZINE CONTROLLER BOUNDARY:\n"
+    "Magazine's own records (its run state.json, ledger, scheduler, sessions and results) are not part of this "
+    "project and are not readable or writable from this session. Any state, report or evidence file the step "
+    "asks you to maintain belongs inside the project workspace. If a required path is unavailable, end with HALT "
+    "and name the missing path instead of creating a substitute location.")
 
 
 def attempt_prompt(prompt, attempt, protocol, cid, layout, values, inputs):
@@ -91,6 +128,12 @@ def attempt_prompt(prompt, attempt, protocol, cid, layout, values, inputs):
              "Finish with the DONE line after publication. The handover payload need not be repeated in your reply."]
     context = attempt.get("failure_context")
     if context:
+        refs = attempt.get("external_refs")
+        if refs:
+            # pi.10: external jobs/approvals an earlier attempt already created. Query them; never resubmit blindly.
+            lines.append("EXTERNAL OPERATIONS FROM EARLIER ATTEMPTS (query these with get_job / the approval state "
+                         "before submitting anything again; a changed plan needs a fresh preview and approval): "
+                         + json.dumps(refs, ensure_ascii=False))
         lines += ["AUTOMATIC RECOVERY: " + json.dumps(context, ensure_ascii=False),
                   "The earlier session is archived. Treat earlier files as unverified candidates; verify useful completed work and preserve it."]
         if attempt["kind"] == "publish":
@@ -99,11 +142,96 @@ def attempt_prompt(prompt, attempt, protocol, cid, layout, values, inputs):
         else:
             lines.append("Repair only this task in its designated output folder, using verified inputs. Recheck existing candidates before changing them.")
     extra.append("\n".join(lines))
+    extra.append(CONTROLLER_BOUNDARY)
     extra.append(proto.DONE_INSTRUCTION)
     separator = "" if prompt.endswith("\n") else "\n"
     text = prompt + separator + "\n---\n" + "\n\n".join(extra) + "\n"
     assert text.startswith(prompt)
     return text
+
+
+MAX_HOST_CALLS = 400
+
+
+class HostContext:
+    """pi.10: the trusted side of one attempt's host-tool and checkpoint calls (runs outside the sandbox)."""
+
+    def __init__(self, executor, cid, attempt):
+        self.ex, self.cid, self.attempt = executor, cid, attempt
+        self.requires = executor.protocol.get("requires") or {}
+        decl = executor.protocol.get("project_checkpoint")
+        self.checkpoint = decl if decl and cid in decl["steps"] else None
+        self.broker = host_tools.HostBroker(executor.config["dataDir"], executor.config.get("agentDir"))
+
+    @classmethod
+    def for_attempt(cls, executor, cid, attempt):
+        ctx = cls(executor, cid, attempt)
+        return ctx if (ctx.requires.get("services") or ctx.checkpoint) else None
+
+    def evidence(self):
+        return self.ex.run_base / "host-calls" / f"{self.cid}.jsonl"
+
+    def worker_request(self):
+        out = {}
+        if self.requires.get("services"):
+            out["services"] = {n: {"operations": v["operations"]} for n, v in self.requires["services"].items()}
+            out["description"] = host_tools.tool_description(self.requires)
+        if self.checkpoint:
+            out["checkpoint"] = cpt.tool_description(self.checkpoint)
+        return out
+
+    async def handle(self, event):
+        kind = event.get("kind")
+        if kind == "host":
+            self.attempt["host_calls"] = self.attempt.get("host_calls", 0)
+            if self.attempt["host_calls"] >= MAX_HOST_CALLS:
+                raise ValueError(f"This attempt reached {MAX_HOST_CALLS} host calls; end with HALT and report progress")
+            self.attempt["host_calls"] += 1
+            result = await asyncio.to_thread(self.broker.call, event.get("service"), event.get("operation"),
+                                             event.get("args"), self.requires, self.evidence())
+            return result
+        if kind == "checkpoint" and self.checkpoint:
+            book = checkpoint_book(self.ex.config, self.ex.protocol, self.ex.meta["document"],
+                                   self.ex.run_base, self.ex.run_id)
+            receipt = await asyncio.to_thread(book.stage, self.cid, self.attempt["attempt_id"])
+            self.attempt["checkpoint_request"] = receipt
+            return {"staged": self.cid, "report_sha256": receipt["report_sha256"]}
+        raise ValueError("This attempt has no such host tool")
+
+
+def checkpoint_book(config, protocol, document, run_base, run_id):
+    allowed = [config["cwd"], *(config.get("workerWritePaths") or [])]
+    identity = {"run_id": run_id, "protocol_version": proto.protocol_version(protocol),
+                "workflow_sha256": cpt.sha256_bytes(cpt.encoded(document))}
+    return cpt.Checkpoints(protocol["project_checkpoint"], run_base, workflow_identity=identity,
+                           allowed_roots=allowed, protected_roots=protected_roots(config))
+
+
+def resumable_completion(ledger, cid):
+    attempts = ((ledger or {}).get("cartridges", {}).get(cid) or {}).get("attempts") or []
+    if (attempts and attempts[-1].get("phase") in ("committing", "committed")
+            and isinstance(attempts[-1].get("checkpoint_completion"), dict)):
+        return attempts[-1]
+    return None
+
+
+def recorded_refs(run_base, cid, limit=10):
+    """External identifiers (job_id, approval_id, plan_hash, operation_id) recorded for this cartridge."""
+    path = Path(run_base) / "host-calls" / f"{cid}.jsonl"
+    out = []
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return out
+    for line in lines:
+        try:
+            rec = json.loads(line)
+        except ValueError:
+            continue
+        refs = {k: v for k, v in (rec.get("refs") or {}).items() if k in ("job_id", "approval_id", "plan_hash", "operation_id")}
+        if refs:
+            out.append({"operation": rec.get("operation"), "service": rec.get("service"), **refs})
+    return out[-limit:]
 
 
 class CartridgeExecutor:
@@ -162,6 +290,36 @@ class CartridgeExecutor:
     # ------------------------------------------------------------ helpers
     def save(self):
         lg.save(self.run_base, self.ledger)
+        self._ledger_digest = integrity.sha256(lg.path(self.run_base).read_bytes())
+
+    def in_session_dir(self, attempt, path, must_exist=True):
+        """A worker-reported session file must be a regular file in this attempt's folder."""
+        folder = os.path.realpath(self.run_base / "sessions" / attempt["attempt_id"])
+        try:
+            real = os.path.realpath(path)
+            if os.path.dirname(real) != folder or os.path.islink(path):
+                return False
+            return os.path.isfile(real) if must_exist else True
+        except (OSError, TypeError, ValueError):
+            return False
+
+    def verify_controller(self, seal, attempt):
+        """After the worker exits: Magazine's files must be exactly as it left them.
+
+        Returns the failure to raise (after restoring Magazine's own bytes), or None.
+        """
+        changed = seal.changes(getattr(self, "_ledger_digest", None))
+        if not changed:
+            return None
+        record = seal.restore(changed, attempt["attempt_id"])
+        self.save()  # rewrites the ledger from Magazine's in-memory record
+        attempt["integrity"] = {"verdict": "rejected", "code": integrity.INTEGRITY_CODE, **record}
+        lg.note(self.ledger, f"{attempt.get('cid')} attempt {attempt['attempt_number']}: controller files were modified "
+                f"during the attempt ({', '.join(changed)}); restored and kept as evidence.", attempt.get("cid"), "error")
+        self.save()
+        return ho.ResultFailure(integrity.INTEGRITY_CODE, "Magazine's controller files were modified while this "
+                                "attempt ran (" + ", ".join(changed) + "). The attempt is rejected; Magazine restored "
+                                "its own records and kept the changed bytes in " + record["quarantine"] + ".", "hard")
 
     def stop_boundary(self):
         rc = self.core["rc"]
@@ -180,6 +338,17 @@ class CartridgeExecutor:
     # ------------------------------------------------------- the attempts
     async def run_cartridge(self, cid, prompt, model_id):
         record = self.ledger["cartridges"].setdefault(cid, {"status": "pending", "attempts": []})
+        resumable = resumable_completion(self.ledger, cid)
+        if resumable is not None:
+            self.stop_boundary()
+            try:
+                text = await self.complete_checkpoint(cid, resumable)
+                self.finish(cid, record, resumable, 0)
+                return text
+            except (cpt.CheckpointError, ho.ResultFailure, OSError) as exc:
+                raise CartridgeFailed(cid, {"code": "CHECKPOINT_RECOVERY_BLOCKED",
+                                           "attempt_number": resumable["attempt_number"],
+                                           "note": str(exc)}) from None
         remaining = min(self.automatic_allowance(), lg.HARD_CEILING - len(record["attempts"]))
         if remaining <= 0:
             record["status"] = "failed"
@@ -257,10 +426,11 @@ class CartridgeExecutor:
             changed = False
             if kind == "session":
                 attempt["session_id"] = event.get("id")
-                if event.get("file"):
+                if event.get("file") and self.in_session_dir(attempt, event["file"], must_exist=False):
                     attempt["session_file"] = os.path.relpath(event["file"], self.run_base)
                 attempt["sdk_version"] = event.get("sdkVersion")
                 attempt["active_tools"] = event.get("activeTools")
+                attempt["sandbox"] = event.get("sandbox")
                 changed = True
             elif kind == "assistant":
                 self._usage.append(event.get("usage"))
@@ -302,6 +472,19 @@ class CartridgeExecutor:
         file_mode = self.mode == "result_file_v1"
         publish = None
         delivered = prompt
+        host = HostContext.for_attempt(self, cid, attempt)
+        declaration = self.protocol.get("project_checkpoint")
+        if declaration:
+            book = checkpoint_book(self.config, self.protocol, self.meta["document"], self.run_base, self.run_id)
+            expected = [step for step in declaration["steps"]
+                        if self.ledger["cartridges"][step]["status"] == "done" and any(
+                            entry.get("checkpoint") for entry in self.ledger["cartridges"][step]["attempts"])]
+            try:
+                await asyncio.to_thread(book.admission, expected)
+            except cpt.CheckpointError as exc:
+                raise ho.ResultFailure("CHECKPOINT_RECOVERY_BLOCKED", str(exc), "hard") from None
+        if host is not None and attempt.get("failure_context"):
+            attempt["external_refs"] = recorded_refs(self.run_base, cid)
         if file_mode:
             attempt["inputs"] = ho.prepare_files(self.layout, self.ledger, cid)
             values = []
@@ -324,9 +507,23 @@ class CartridgeExecutor:
         seconds = effective_timeout(self.protocol, self.config)
         attempt["timeout_seconds"] = seconds
         self.save()
+        seal = integrity.Seal(self.run_base)
         try:
-            result = await self.dispatch.run(delivered, model_id, publish=publish, timeout=seconds,
-                                             on_event=self.on_event(attempt, police))
+            try:
+                result = await self.dispatch.run(delivered, model_id, publish=publish, timeout=seconds,
+                                                 on_event=self.on_event(attempt, police),
+                                                 session_dir=self.run_base / "sessions" / attempt["attempt_id"],
+                                                 host=host)
+            except BaseException as exc:
+                tampered = self.verify_controller(seal, attempt)
+                if tampered is not None and not isinstance(exc, asyncio.CancelledError):
+                    raise tampered from None
+                raise
+            tampered = self.verify_controller(seal, attempt)
+            if tampered is not None:
+                raise tampered
+        except SandboxUnavailable as exc:
+            raise ho.ResultFailure("WORKER_SANDBOX_UNAVAILABLE", str(exc), "hard") from None
         except asyncio.TimeoutError:
             self.record_tokens(attempt, False)
             if not self.dispatch.terminated:
@@ -344,7 +541,14 @@ class CartridgeExecutor:
         except WorkerFailure as exc:
             await self.settle_loop_abort(attempt)
             self.record_tokens(attempt, False)
-            raise classify_worker_error(str(exc)) from None
+            # Classified on Magazine's fixed reason only; the worker's own last
+            # error line is kept for people but never changes the decision.
+            failure = classify_worker_error(getattr(exc, "reason", str(exc)))
+            detail = getattr(exc, "detail", "")
+            if detail:
+                message = str(failure).split(": ", 1)[1] if ": " in str(failure) else str(failure)
+                failure = ho.ResultFailure(failure.code, f"{message} ({detail})", failure.recovery)
+            raise failure from None
         if self.loop_abort is not None:
             # Detection raced with normal completion; the evidence still stands.
             await self.settle_loop_abort(attempt)
@@ -353,13 +557,20 @@ class CartridgeExecutor:
         attempt["finish"] = finish
         if result.get("sessionId") != attempt.get("session_id"):
             raise ho.ResultFailure("RESULT_IDENTITY_MISMATCH", "Worker session identity changed during the attempt.")
+        if not self.in_session_dir(attempt, result.get("sessionFile") or ""):
+            raise ho.ResultFailure("WORKER_INTEGRITY", "The reported session file is outside this attempt's "
+                                   "session folder; it was not accepted.", "hard")
+        if sandbox_mode(self.config) == "required" and not attempt.get("sandbox"):
+            raise ho.ResultFailure("WORKER_SANDBOX_UNAVAILABLE", "The worker did not report kernel confinement.", "hard")
         attempt["session_file"] = os.path.relpath(result["sessionFile"], self.run_base)
         self.record_tokens(attempt, finish == "stop")
         if file_mode:
             attempt["session_archive"] = await self.retry_storage(
                 attempt, lambda: ho.archive_session(self.layout, cid, attempt, result["sessionFile"]))
         if finish == "error":
-            raise ho.ResultFailure("WORKER_FAILED", f"The model returned an error: {result.get('errorMessage') or 'unknown'}", "repair")
+            message = result.get('errorMessage') or 'unknown'
+            raise classify_model_error(message) or ho.ResultFailure(
+                "WORKER_FAILED", f"The model returned an error: {message}", "repair")
         if finish == "length":
             raise ho.ResultFailure("INCOMPLETE_RESPONSE", "The model response stopped at its output limit (stop reason 'length').", "repair")
         if finish != "stop" or not text.strip():
@@ -374,6 +585,11 @@ class CartridgeExecutor:
             return None
         if status != "done":
             raise ho.ResultFailure("OUTPUT_MISSING" if missing else "DONE_MISSING", note, "repair")
+        decl = self.protocol.get("project_checkpoint")
+        receipt = attempt.get("checkpoint_request")
+        if decl and decl["required"] and cid in decl["steps"] and receipt is None:
+            raise ho.ResultFailure("CHECKPOINT_NOT_COMMITTED",
+                                   "Validate the required project checkpoint before returning DONE.", "repair")
         base = self.layout.attempt_dir(cid, attempt["attempt_id"])
         document, source = ho.read_result_file(base)
         attempt["source_result"] = source
@@ -385,6 +601,13 @@ class CartridgeExecutor:
                                    "The result file was not written by this attempt's Magazine publisher tool.")
         pointers = ho.validate_envelope(document, ho.attempt_identity(self.run_id, cid, attempt), self.protocol, cid)
         attempt["phase"] = "committing"
+        if receipt is not None:
+            attempt["checkpoint_completion"] = {"text": text, "source": source}
+            self.save()
+            try:
+                return await self.complete_checkpoint(cid, attempt)
+            except cpt.CheckpointError as exc:
+                raise ho.ResultFailure("CHECKPOINT_RECOVERY_BLOCKED", str(exc), "hard") from None
         self.save()
         attempt["handover"] = await self.retry_storage(
             attempt, lambda: ho.commit_attempt_result(self.layout, cid, attempt, document, source, pointers))
@@ -393,6 +616,40 @@ class CartridgeExecutor:
         self.save()  # the consumer cannot be dispatched before this succeeds
         ho.committed_payload(self.layout, self.ledger, cid)
         return text
+
+    async def complete_checkpoint(self, cid, attempt):
+        """Finish the same validated attempt after any interrupted durable write."""
+        plan = attempt["checkpoint_completion"]
+        receipt = attempt["checkpoint_request"]
+        declaration = self.protocol.get("project_checkpoint")
+        expected = ho.attempt_identity(self.run_id, cid, attempt)
+        if (not declaration or cid not in declaration["steps"]
+                or receipt["attempt_id"] != expected["attempt_id"] or receipt["step"] != cid):
+            raise ho.ResultFailure("CHECKPOINT_RECOVERY_BLOCKED", "Checkpoint attempt identity changed.")
+        outputs, missing = ho.collect_outputs(self.layout, cid)
+        status, _ = proto.judge(plan["text"], missing, True, {"stop_reason": attempt.get("finish")})
+        if attempt.get("finish") != "stop" or status != "done" or outputs != attempt["outputs"]:
+            raise ho.ResultFailure("CHECKPOINT_RECOVERY_BLOCKED", "Accepted output is missing or has changed.")
+        base = self.layout.attempt_dir(cid, attempt["attempt_id"])
+        document, source = ho.read_result_file(base)
+        if source != plan["source"]:
+            raise ho.ResultFailure("CHECKPOINT_RECOVERY_BLOCKED", "Published result changed after validation.")
+        pointers = ho.validate_envelope(document, expected, self.protocol, cid)
+        handover = await self.retry_storage(
+            attempt, lambda: ho.commit_attempt_result(self.layout, cid, attempt, document, source, pointers))
+        finished = dict(attempt, phase="committed", status="done", handover=handover)
+        ho.committed_payload(self.layout, {"cartridges": {cid: {"attempts": [finished]}}}, cid)
+        book = checkpoint_book(self.config, self.protocol, self.meta["document"], self.run_base, self.run_id)
+        result = await asyncio.to_thread(book.commit, receipt, handover["sha256"])
+        attempt.update(phase="committed", status="done", handover=handover, checkpoint=result,
+                       finished=lg.now_iso())
+        attempt.pop("code", None)
+        attempt.pop("note", None)
+        self.ledger["cartridges"][cid]["status"] = "done"
+        # Retain the validated completion receipt until the core advances DONE.
+        # If it stops between these two writes, replay uses this same attempt.
+        self.save()
+        return plan["text"]
 
     async def settle_loop_abort(self, attempt):
         if self._abort_task is not None:

@@ -25,6 +25,7 @@ DONE = '{"status":"DONE"}'
 
 class ScriptedProvider:
     def __init__(self):
+        self.host_replies = []
         self.requests = []
         self.attempts = {}          # script name -> attempt ids seen (ordered)
         self.hold = threading.Event()
@@ -35,6 +36,7 @@ class ScriptedProvider:
         self.reached = {}           # name -> threading.Event (set when a gate is reached)
         self.inflight = 0
         self.max_inflight = 0
+        self.sequences = {}         # name -> list of bash commands (script bashseq:NAME); 'HOLD' blocks
         fixture = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -147,6 +149,44 @@ class ScriptedProvider:
         def finish(text='Finished the task.'):
             self.text(handler, model, text + '\n' + DONE)
 
+        # pi.10 scripts: host broker and deterministic checkpoint tools
+        if name == 'hostcall':
+            if rounds == 0:
+                op, _, pid = arg.partition('@')
+                return self.call(handler, model, 'magazine_host', {'service': 'unreal_connector', 'operation': op,
+                                                                   'arguments': {'project_id': pid} if pid else {}})
+            if rounds == 1:
+                self.host_replies.append(messages[-1].get('content'))
+                return publish()
+            return finish()
+        if name == 'checkpoint':
+            report = (re.search(r'REPORT_PATH=(\S+)', user) or [None, None])[1]
+            if rounds == 0:
+                return self.call(handler, model, 'write', {'path': report, 'content': json.dumps({'step_id': arg, 'status': 'DONE'})})
+            if rounds == 1:
+                return self.call(handler, model, 'magazine_checkpoint', {})
+            if rounds == 2:
+                self.host_replies.append(messages[-1].get('content'))
+                return publish()
+            return finish()
+        if name == 'arch-error':
+            handler.send_response(500); handler.end_headers()
+            handler.wfile.write(b'{"error":{"message":"llama runner: unknown model architecture: \'ornith\'"}}'); return
+        if name == 'bashseq':
+            commands = self.sequences.get(arg, [])
+            if rounds < len(commands):
+                if commands[rounds] == 'HOLD':
+                    self.holding.set()
+                    handler.send_response(200); handler.send_header('Content-Type', 'text/event-stream'); handler.end_headers()
+                    value = {'id': 'x', 'object': 'chat.completion.chunk', 'created': 0, 'model': model,
+                             'choices': [{'index': 0, 'delta': {'role': 'assistant', 'content': 'Working'}, 'finish_reason': None}]}
+                    handler.wfile.write(('data: ' + json.dumps(value) + '\n\n').encode()); handler.wfile.flush()
+                    self.hold.wait(60)
+                    return
+                return self.call(handler, model, 'bash', {'command': commands[rounds]})
+            if rounds == len(commands):
+                return publish(verified=True, note='done', files=[], checks=['claimed'])
+            return finish()
         if name == 'error-once' and number == 1:
             handler.send_response(500); handler.end_headers()
             handler.wfile.write(b'{"error":{"message":"injected provider failure"}}'); return

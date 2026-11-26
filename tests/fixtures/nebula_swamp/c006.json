@@ -1,0 +1,101 @@
+{
+  "step_id": "c006",
+  "project_root": "/workspace/Unreal Projects/NebulaSwamp",
+  "status": "DONE",
+  "title": "Create project-local rollback manifest and backup of files/packages this run will change; verify backup hashes and restoration procedure; record ownership boundary",
+  "timestamp": "2026-11-24T15:00:00Z",
+  "canonical_paths": {
+    "pi_root": "/workspace/Unreal Projects/NebulaSwamp",
+    "windows_host_root": "E:\\Unreal projects\\NebulaSwamp",
+    "mount": "E:\\ -> /workspace/Unreal Projects (9p rw)",
+    "resource_kit_source": "/projects/3D kit",
+    "resource_kit_read_only": true
+  },
+  "predecessor_verification": {
+    "state.json_last_committed_step": "c005",
+    "state.json_completed_steps": ["c001", "c002", "c003", "c004", "c005"],
+    "c005_status": "DONE",
+    "c005_report_sha256": "e1d06bdab6ce8bcb7e3578dbe821c6533fbdf1f4886146ca6933085995990688",
+    "matches_state_last_report_hash": true,
+    "predecessor_valid": true
+  },
+  "environment": {
+    "unreal_connector_installed_on_pi": false,
+    "connector_port_8765_reachable": false,
+    "connector_reprobe_status": "ECONNREFUSED on :8765; ports 8766/8767/8888/8000/8080/9000/8443/443 all closed",
+    "ue_binary_or_process": "none",
+    "ue_project_files_on_pi_mount": 0,
+    "note": "The real UE project (.uproject/.umap/.uasset/C++) and the Unreal Connector (uehl) live on the host (Windows E:\\) only. They are reachable via the Connector, which is a Windows app not installed on this Pi session. No host-side editor save workflow can be exercised from Pi; the project is therefore absent on this mount."
+  },
+  "task": {
+    "objective": "Create a project-local rollback manifest and backup only of the files/packages this run will change, using the documented editor save workflow, preserving previous backups; verify backup hashes and the restoration procedure without restoring over active content; record the ownership boundary.",
+    "doc_save_workflow_status": "not_available_on_pi (Unreal Connector / UE editor save workflow is host-side only and unavailable here)",
+    "local_equivalent": "Project-local rollback manifest + content-addressed backup copies of the managed project-local files, with hash verification. This is the project-local stand-in for the host-side editor save/backup workflow, applicable to the files this step actually manages."
+  },
+  "managed_scope": {
+    "project_or_package_files_changed": "none — no .uproject/.umap/.uasset/C++ files on the Pi mount, so no project-local actor/package IDs exist to backup here",
+    "project_local_files_changed_by_c006": [".magazine-level-v2/state.json"],
+    "deliverable": ".magazine-level-v2/rollback_manifest_c006.json + backup tree under .magazine-level-v2/backup/c006_baseline"
+  },
+  "backup": {
+    "backup_root": ".magazine-level-v2/backup/c006_baseline",
+    "covered_files": 13,
+    "preserve_previous_backups": true,
+    "preserve_note": "first baseline; each run uses a distinct dated/named subdir so earlier backups are never overwritten or restored over",
+    "all_backup_copies_match_source": true,
+    "all_backup_hashes_match_manifest": true,
+    "restore_procedure": "Recovery restores backup_root/<rel> to <root>/<rel> only after the failing change is removed and the restore is explicitly approved. Integrity is confirmed by re-hashing the backup copy and comparing to the manifest sha256. This run verified all 13 backup copies match source and manifest; no copy-back occurred, so no active content was overwritten.",
+    "no_restore_over_active_content": true,
+    "no_copy_back_occurred": true
+  },
+  "ownership_boundary": {
+    "writable_owner_project": "/workspace/Unreal Projects/NebulaSwamp (9p rw bind of Windows E:\\)",
+    "read_only_not_to_modify": ["/projects/3D kit", "Pi system", "Magazine/Docker/network", "Ollama", "Unreal installation", "Unreal Connector", "unrelated projects", "vendor/Fab content"],
+    "project_local_files_under_backup": [
+      ".magazine-level-v2/state.json",
+      ".magazine-level-v2/c001.json",
+      ".magazine-level-v2/c002.json",
+      ".magazine-level-v2/c003.json",
+      ".magazine-level-v2/c004.json",
+      ".magazine-level-v2/c005.json",
+      "evidence/3d-kit/c002_live_lookup.json",
+      "evidence/3d-kit/c002_openapi.json",
+      "evidence/3d-kit/c002_primary_pack_id.json",
+      "evidence/3d-kit/c002_smoke.json",
+      "evidence/c003_connector_probe.json",
+      "evidence/c004_engine_probe.json",
+      "evidence/c005_inventory_probe.json"
+    ],
+    "excluded": "host-side UE project files and the 3D Resource Kit source mount are not part of this project-local backup (kit is read-only; UE project is host-side only and absent on the Pi mount)"
+  },
+  "runtime_checks_performed": [
+    "verified predecessor c005 DONE + report sha256 e1d06bdab6ce8bcb7e3578dbe821c6533fbdf1f4886146ca6933085995990688 matches state.json last_report hash",
+    "fresh connector re-probe: 127.0.0.1:8765 ECONNREFUSED; 8766/8767/8888/8000/8080/9000/8443/443 all closed; no uehl/Unreal binary or process",
+    "confirmed 0 .uproject/.umap/.uasset on the Pi mount; host-side UE project and Connector unavailable from Pi",
+    "built rollback manifest + content-addressed backup covering all 13 existing project-local files",
+    "verified all 13 backup copies match source (sha256) and manifest sha256 (independent re-hash of every backup file)",
+    "verified no copy-back: active .magazine-level-v2 untouched (state.json unchanged 9d42dbfaf7ed…, c005 unchanged e1d06bdab6ce…)",
+    "recorded ownership boundary: writable owner project vs read-only kit + host-side UE project excluded",
+    "one engine instance / one LLM respected: no engine or editor started, no connector session, no job submitted"
+  ],
+  "limitations": [
+    "Unreal Connector (uehl) is a Windows application not installed on this Pi session; the host-side UE editor save/backup workflow (UE package + actor export) cannot be exercised here and the UE project is absent on the Pi mount — recorded with actual TCP/process/mount evidence, not a pass/fabrication",
+    "Host-side UE project files (.uproject/.umap/.uasset/C++) are outside this project-local backup; they are only reachable via the Connector",
+    "No UE actor/package IDs exist on this mount to record (none present), so the actor/package-id list is empty"
+  ],
+  "changes": [
+    "created /workspace/Unreal Projects/NebulaSwamp/.magazine-level-v2/rollback_manifest_c006.json (rollback manifest + backup index with sha256)",
+    "created /workspace/Unreal Projects/NebulaSwamp/.magazine-level-v2/backup/c006_baseline/ (content-addressed backup of 13 project-local files; no copy-back)",
+    "updated /workspace/Unreal Projects/NebulaSwamp/.magazine-level-v2/state.json (last_committed_step c006, last_report c006.json, completed_steps incl. c006)"
+  ],
+  "evidence_paths": [
+    "/workspace/Unreal Projects/NebulaSwamp/.magazine-level-v2/rollback_manifest_c006.json",
+    "/workspace/Unreal Projects/NebulaSwamp/.magazine-level-v2/backup/c006_baseline",
+    "/workspace/Unreal Projects/NebulaSwamp/.magazine-level-v2/c006.json",
+    "/workspace/Unreal Projects/NebulaSwamp/.magazine-level-v2/state.json"
+  ],
+  "sha256_of_changed_regular_files": {
+    "manifest": "pending_write_c006_json_after",
+    "state.json_pre_c006": "9d42dbfaf7ed2ee42583853bde4ecf65bf18fa3fd6a7778c0040eb26b9caad86"
+  }
+}
