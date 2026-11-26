@@ -71,10 +71,22 @@ The local report records 984 passing Python tests (one skipped), 13 passing Node
 
 ## Install and compatibility
 
-Current source version: **0.1.0-pi.8-ui.5**, including automatic Ollama model
-discovery and guarded interrupted-run reconciliation. The tested Docker Desktop deployment uses
-**Pi WebUI 0.120.0, SDK 1.5.2, Node 22.23.5 and Python 3.11**.
-This is the WebUI plugin, not the separate Pi CLI or Magazine for Open WebUI.
+Current public source version: **0.1.0-pi.8-ui.5**, including automatic Ollama model
+discovery and guarded interrupted-run reconciliation.
+
+> **Recommended Pi installation: Pi WebUI 0.120.0 with Pi SDK 1.5.2** (`@earendil-works/pi-coding-agent`). Pin both versions; updating Pi WebUI alone can also change the resolved SDK. The tested Docker Desktop deployment uses Node 22.23.5 and Python 3.11.
+
+| Pi WebUI | Pi SDK | Compatibility status |
+| --- | --- | --- |
+| **0.120.0** | **1.5.2** | Recommended deployment; tested host/SDK pair |
+| 0.115.0 | 1.1.0 | Historical allowlisted pair; offline-verified, not current acceptance baseline |
+| 0.96.1 | 1.0.2 | Historical allowlisted pair; earlier live acceptance |
+| 0.122.0 | 1.6.1 | Not supported for the newer confined-worker candidate; local worker-integrity checks failed |
+| Other combinations | Any | Unverified unless explicitly covered by the installed release's compatibility matrix |
+
+Newer development candidates (including pi.10.4) are being validated on the recommended pair. Their worker confinement also relies on SDK-specific shell-tool behaviour; a compatibility override does not establish worker safety. Do not bypass these checks or assume newer Pi/SDK releases are supported. The candidate code is not part of the public source version above.
+
+See the [installation guide and version verification commands](docs/INSTALL.md#requirements) before installing or upgrading. This is the WebUI plugin, not the separate Pi CLI or Magazine for Open WebUI.
 
 Start with [installation](docs/INSTALL.md). Docker Desktop users should also read
 [Linux storage and safe migration](docs/LINUX-STORAGE.md): Magazine's internal
