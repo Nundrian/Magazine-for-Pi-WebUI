@@ -1,4 +1,11 @@
-# Magazine for Pi WebUI
+# Magazine for Pi WebUI 0.120.0 (Pi SDK 1.5.2)
+
+> [!IMPORTANT]
+> **Before installing: use Pi WebUI 0.120.0 with Pi SDK 1.5.2.** This is the recommended tested combination. Do not assume the latest Pi release is compatible.
+>
+> Magazine relies on Pi's internal coding-agent SDK to create fresh cartridge sessions, execute tools and manage worker lifecycles. Changes to SDK behaviour can break these integrations even if the plugin installs and its interface opens. In testing the newer confined-worker candidate with Pi WebUI 0.122.0 / SDK 1.6.1, worker-integrity checks failed: the expected shell-tool confinement contract was not verified. These checks deliberately refuse unsafe or unverified execution rather than silently bypassing safeguards.
+>
+> Pin both versions and check the SDK actually loaded by Pi before installing or upgrading. See [installation and version checks](docs/INSTALL.md#requirements) and the [compatibility table](#install-and-compatibility) for historical combinations and development status.
 
 **Give your AI one clear job at a time. Keep the results and see what happened.**
 
