@@ -1,7 +1,7 @@
 # Magazine for Pi WebUI 0.120.0 (Pi SDK 1.5.2)
 
 > [!IMPORTANT]
-> **Use Pi WebUI 0.120.0 with Pi SDK 1.5.2.** This is the recommended tested pair for the current candidate. Pi 0.122.0 / SDK 1.6.1 failed the confined-worker integrity check in local testing. Do not bypass these safeguards or assume a newer host/SDK is compatible. See [current installation notes](docs/PI104-INSTALL-NOTE.md).
+> **Use Pi WebUI 0.120.0 with Pi SDK 1.5.2.** This is the recommended tested pair for the current candidate. Pi 0.122.0 / SDK 1.6.1 failed the confined-worker integrity check in local testing. Do not bypass these safeguards or assume a newer host/SDK is compatible. See [current installation notes](docs/PI105-CORRECTIVE.md).
 
 **Give your AI one clear job at a time. Keep the results and see what happened.**
 
@@ -11,8 +11,7 @@ ordered steps and runs them using the models you choose. Each step is called a
 to carry the whole previous chat into the next job.
 
 Use cartridges for software, research, documents, data processing and other staged work.
-External application connections are optional. See the [pi.10.3 candidate notes](docs/PI103-CORRECTIVE.md)
-for checkpoint behaviour, compatibility and rollout requirements.
+External application connections are optional. See the [pi.10.5 corrective notes](docs/PI105-CORRECTIVE.md) for current execution settings and rollout requirements.
 
 It is designed to make larger tasks more manageable for smaller models, while
 remaining usable with larger models too. It is a prompt sequencer, not an AI
@@ -38,7 +37,9 @@ permission changes are detected and repaired. Network access and signals are not
 confined ([details and limits](docs/PI9-RELIABILITY.md)).
 
 Use one compatible Pi model throughout, or assign different models to individual
-steps. Magazine does not require a particular LLM and does not silently replace
+steps. Choose models and reasoning levels manually, in bulk or through a reviewed
+Frontier assignment plan (schema 1.0 or 1.1). New runs freeze execution settings
+at Prepare; native SDK compaction can operate within a cartridge session. Magazine does not require a particular LLM and does not silently replace
 your chosen model. There is no separate Magazine login, owner key or import key.
 Pi's own access controls still apply.
 
@@ -73,11 +74,19 @@ Review the deliverables and use real task-specific tests.
 
 **[Technical guide: execution, checks, handovers and safeguards →](docs/TECHNICAL-GUIDE.md)**
 
-## Development status — 26 November 2026
+## What's new in 0.1.0-pi.10.5
 
-Current source: **0.1.0-pi.10.5 provisional candidate**. This supersedes pi.8-ui.5 and incorporates the pi.9 reliability work, pi.10 host tools and checkpoint support, pi.10.3 transactional completion corrections, and pi.10.4 folder-export cleanup fix. See [CHANGELOG.md](CHANGELOG.md) and [pi.10.3 corrective notes](docs/PI103-CORRECTIVE.md).
+- **Model and reasoning controls:** automatic Ollama chat-model discovery, individual and bulk assignment, workflow and cartridge reasoning overrides, explicit inheritance of Pi settings, and reusable setup assignments.
+- **Execution and recovery:** sequential or round-robin scheduling, guarded duplicate execution, explicit recovery without starting inference, and persistent results, chats and handovers.
+- **Interface fixes:** stale allocation responses cannot overwrite newer choices; Manage refreshes completed run status and deletion controls without disturbing focus or confirmations.
+- **Runtime fixes:** truncated SDK responses are correctly classified, native compaction events reach the ledger, and reported compaction tokens are counted once. Missing usage remains unknown rather than being reported as zero.
+- **Safe file management:** workspace-local recoverable trash works across Windows-backed workspaces and Linux-managed state. Existing checkpoint and non-overwriting Finished Work export repairs are retained.
 
-The owner-supplied delivery has matching source and plugin checksums. The pi.10.4 change report records 52 focused tests passed and 17 skipped, plus Windows control-flow publication probes. The publisher review additionally ran 28 focused tests with one skip. These are not full live-model acceptance results. The supplied report notes that actual Windows-backed mounts and native Linux descriptor operations were not verified in its environment.
+## Development status — 27 November 2026
+
+Current source: **0.1.0-pi.10.5 (reviewed candidate)**, published on main. This supersedes pi.10.4. See [the full changelog](CHANGELOG.md) and [current corrective notes](docs/PI105-CORRECTIVE.md).
+
+The final isolated acceptance on 27 November 2026 passed 1,066 Linux regression tests (one legacy skip), 21 JavaScript/native-host tests and Firefox interface tests. Three real-model workflows committed all 28 cartridges (8/8, 8/8 and 12/12) using Qwen and Ornith 9B models. Tests covered sequential and round-robin scheduling, restart/recovery, native compaction, model/reasoning selection and deletion/restoration. A maximum of one upstream inference request was observed during the round-robin runs. Earlier failed attempts and partial usage were retained, not counted as successful attempts. The legacy pi.5 upgrade test requires its historical archive and SDK 1.0.2. Other host/SDK pairs, private external integrations and full project acceptance were not re-certified. Production installation is a separate step.
 
 **[Development roadmap and outstanding work](TODO.md)**.
 
@@ -90,15 +99,13 @@ reconciliation. See the [changelog](CHANGELOG.md). The tested Docker Desktop dep
 **Pi WebUI 0.120.0, SDK 1.5.2, Node 22.23.5 and Python 3.11**.
 This is the WebUI plugin, not the separate Pi CLI or Magazine for Open WebUI.
 
-Start with [current installation notes](docs/PI104-INSTALL-NOTE.md), then the [installation procedure](docs/INSTALL.md). Docker Desktop users should also read
+Start with [current installation notes](docs/PI105-CORRECTIVE.md), then the [installation procedure](docs/INSTALL.md). Docker Desktop users should also read
 [Linux storage and safe migration](docs/LINUX-STORAGE.md): Magazine's internal
 state needs the supported atomic file operations. Keep backups and update only
 when Magazine is idle. Never remove a current data mount and assume the older
 directory underneath it contains your latest work.
 
-This repository contains the complete source; it does not currently offer a
-published GitHub Release with prebuilt downloads. Packaging instructions are in
-the installation guide. Documentation screenshots are not plugin runtime assets.
+This repository contains the complete source. To obtain the current plugin, clone the repository and stage its `magazine-pi/` directory using the existing supported installation procedure. See the [GitHub source instructions](docs/INSTALL.md#obtain-the-plugin-from-github). No separate GitHub Release is required. Documentation screenshots are not plugin runtime assets.
 
 ## More detail
 

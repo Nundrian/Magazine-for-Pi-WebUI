@@ -1,19 +1,23 @@
 # Development roadmap and outstanding work
 
-Updated 24 November 2026.
+Updated 27 November 2026.
 
-This is the active checklist for Magazine for Pi WebUI. Priorities are proposed
-from the 24 November reliability audit and deployment report. The public source
-now contains pi.9.1 (synchronised 24 November 2026); checked items describe
-work present in that source, not validated production inference.
+## Current baseline — pi.10.5
 
-## Release baseline
+Public source: **0.1.0-pi.10.5** (reviewed candidate). See [CHANGELOG.md](CHANGELOG.md) and [corrective notes](docs/PI105-CORRECTIVE.md).
 
-- Public source: **0.1.0-pi.9.1**, identical to the installed local build
-  (Pi WebUI 0.120.0, SDK 1.5.2).
-- Local pi.9.1 validation reported 984 Python tests passed, one skipped, 13/13
-  Node tests passed, package verification and live non-inference boundary probes.
-- Production model execution under the new sandbox has not yet been validated.
+The final isolated acceptance on 27 November 2026 passed 1,066 Linux regression tests (one legacy skip), 21 JavaScript/native-host tests and Firefox interface tests. Three real-model workflows committed all 28 cartridges (8/8, 8/8 and 12/12) using Qwen and Ornith 9B models. Tests covered sequential and round-robin scheduling, restart/recovery, native compaction, model/reasoning selection and deletion/restoration. A maximum of one upstream inference request was observed during the round-robin runs. Earlier failed attempts and partial usage were retained, not counted as successful attempts. The legacy pi.5 upgrade test requires its historical archive and SDK 1.0.2. Other host/SDK pairs, private external integrations and full project acceptance were not re-certified. Production installation is a separate step.
+
+- [x] Publish reviewed pi.10.5 source without rewriting repository history.
+- [x] Correct truncated response classification, Manage polling, native compaction event forwarding and compaction token accounting.
+- [x] Complete the three isolated real-model acceptance workflows and Firefox checks.
+- [ ] Authorised upgrade of the existing installation; verify preserved state, configuration, catalogue and integrations, with rollback available.
+- [ ] Real project acceptance and verification of optional external services when available.
+- [ ] Investigate historical MCP EIO if it recurs; no causal fix is established.
+
+## Historical pi.9 / pi.9.1 audit checklist
+
+The following retained checklist records the 24 November audit baseline and longer-term engineering tasks. Unchecked historical items are not automatically closed by pi.10.5 acceptance; consult the current baseline above for the narrower verified results.
 
 ## Recovered source archive — independent checks
 
@@ -94,7 +98,7 @@ work present in that source, not validated production inference.
   shipped code; document required paths, sandbox limitations, emergency Stop,
   state repair and restore-point management.
 - [ ] Verify install/upgrade/rollback with preserved configuration, history and
-  queue; publish a tagged release and checksums only after review and acceptance.
+  queue; verify the source commit and package checksums; a separate tagged release is optional.
 - [ ] Keep the repository free of runtime data, transcripts, credentials,
   private configuration, backups and project-specific deployment paths.
 

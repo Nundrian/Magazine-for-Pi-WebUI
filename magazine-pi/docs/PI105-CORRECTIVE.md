@@ -1,9 +1,8 @@
-# Magazine pi.10.5 provisional corrective candidate
+# Magazine pi.10.5 reviewed corrective candidate
 
 The tested source baseline is d2b456a5fcf94c567d682fff3563475fa664f12b. The new
 execution policy targets Pi WebUI 0.120.0 and Pi SDK 1.5.2. Earlier supported
-SDKs retain their previous session settings. Linux and real-model acceptance
-of pi.10.5 is required before a production upgrade.
+SDKs retain their previous session settings. The final isolated Linux and real-model acceptance gates passed on 27 November 2026. Production upgrade remains a separate authorised operation.
 
 ## Verification continuation
 
@@ -18,7 +17,7 @@ and file deletion/restoration across Windows 9p workspace and Linux ext4 state.
 An actual disposable-container restart preserved committed work; reconciliation,
 deletion/restoration, recovery and catalogue refresh made zero provider requests.
 
-Two confirmed defects were corrected during verification: terminal truncated
+The first two of four confirmed defects were corrected during verification: terminal truncated
 responses are read from the SDK event and checked against the saved transcript,
 and Manage refreshes its existing status/deletion controls after execution ends.
 The restart regression fixture now gates its first cartridge until both runs are
@@ -34,10 +33,7 @@ Saved compaction records also expose usage separately from assistant messages.
 Attempt snapshots now include that reported usage exactly once, retain its
 component totals, and mark missing compaction usage incomplete rather than zero.
 
-Scripted evidence does not count as completion of Acceptance A, B or C. Their
-real-model, native compaction and provider-mapping evidence is recorded separately
-in the final verification report. This is a review candidate, not production
-deployment authority. Native provider settings determine outgoing reasoning;
+Scripted evidence does not count as completion of Acceptance A, B or C. The final real-model runs separately passed A 8/8, B 8/8 and C 12/12, repeated after the last executable correction. B retained an interrupted attempt and a DONE_MISSING attempt followed by an automatic retry; its token total is partial. C08 completed two native compactions, with 13,863 reported compaction tokens included in the 100,799 reported attempt total. Pi client context was 16,384, while Ollama's observed context was 131,072; this is not evidence of a reduced KV allocation. Recovery and reconciliation did not automatically start inference; the maximum observed upstream concurrency was one. Private external integrations were not included in these isolated real-model tests. The historical MCP EIO was not reproduced and its cause remains unknown. This is a reviewed candidate, not production deployment authority. Native provider settings determine outgoing reasoning;
 the isolated Ollama profile used an explicit Off-to-none mapping. Existing
 production model definitions and reasoning mappings were not modified.
 
@@ -93,8 +89,7 @@ sharing. Applying a plan configures setup and requires a separate Prepare and St
 
 ## Candidate upgrade and rollback
 
-Keep using pi.10.4 pending independent review and the outstanding gates. Once
-approved, verify the plugin archive hash, confirm the existing Magazine is idle
+The candidate is available in the repository following review and isolated acceptance. For an authorised update, use the verified source commit or verify the plugin archive hash, confirm the existing Magazine is idle
 and save a protected copy of the installed plugin and its local config. Back up
 the Magazine state volume consistently while its controller is idle. Keep the
 checkpoint local. Preserve the Pi host, SDK, volumes, mounts, credentials and

@@ -1,6 +1,6 @@
 # Changelog — Magazine for Pi WebUI
 
-## 0.1.0-pi.10.5 provisional candidate
+## 0.1.0-pi.10.5 — 27 November 2026 (reviewed candidate)
 
 - Ollama discovery supplies absent chat metadata and exact model-name fallbacks while preserving configured values.
 - New SDK 1.5.2 runs resolve Pi thinking and compaction at preparation. Schema 1.1 supports independent workflow and cartridge reasoning and reusable export.
@@ -11,7 +11,22 @@
 - Native compaction start/end events cross the Python dispatch channel and are durably retained in attempt records.
 - Attempt totals include reported native compaction usage once; missing compaction usage stays unavailable and makes totals incomplete.
 - The C acceptance fixture requires six full bounded input reads; header-only reads no longer satisfy its context exercise.
-- Linux regression, native Pi activation and Firefox scripted acceptance are verified. Real-model acceptance remains a separate release gate. See [pi.10.5 corrective notes](docs/PI105-CORRECTIVE.md).
+- Linux regression, native Pi activation, Firefox scripted acceptance and all three final real-model workflows passed. See [pi.10.5 corrective notes](docs/PI105-CORRECTIVE.md).
+
+### Confirmed fixes
+
+| Defect | Correction |
+| --- | --- |
+| Truncated response incorrectly reported as NO_FINAL_ANSWER | Retain SDK message_end response and verify against saved transcript; classify as INCOMPLETE_RESPONSE. |
+| Manage retained RUNNING status and disabled deletion after completion | Refresh existing row status and eligibility on polling, preserving focus and open controls. |
+| Native compaction lifecycle events lost by dispatch | Forward compaction events to the Python observer and retain them in attempt records. |
+| Native compaction usage omitted from totals | Count saved assistant and compaction usage once; show the compaction component and partial/unavailable usage explicitly. |
+
+### Acceptance and limitations
+
+The final isolated acceptance on 27 November 2026 passed 1,066 Linux regression tests (one legacy skip), 21 JavaScript/native-host tests and Firefox interface tests. Three real-model workflows committed all 28 cartridges (8/8, 8/8 and 12/12) using Qwen and Ornith 9B models. Tests covered sequential and round-robin scheduling, restart/recovery, native compaction, model/reasoning selection and deletion/restoration. A maximum of one upstream inference request was observed during the round-robin runs. Earlier failed attempts and partial usage were retained, not counted as successful attempts. The legacy pi.5 upgrade test requires its historical archive and SDK 1.0.2. Other host/SDK pairs, private external integrations and full project acceptance were not re-certified. Production installation is a separate step.
+
+The native compaction exercise completed two compactions and committed its result in the same session. It does not establish reduced Ollama KV allocation or universal model reliability. The historical MCP EIO incident was not reproduced; no cause or fix is claimed.
 
 ## 0.1.0-pi.10.4 corrective candidate
 

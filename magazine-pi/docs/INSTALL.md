@@ -1,4 +1,4 @@
-# Install or update Magazine 0.1.0-pi.9.1
+# Install or update Magazine 0.1.0-pi.10.5
 
 Plugin ID: `magazine-pi`. This is the native Pi plugin, separate from Open WebUI
 Magazine and the older Magazine Simple for Pi plugin. The distributed ZIP contains
@@ -31,14 +31,29 @@ complete Pi data directory, and any external Magazine workspace. Preserve model
 providers, permissions, other plugins and original project files. Never use
 workflow import to install this software ZIP.
 
+## Obtain the plugin from GitHub
+
+The repository's `main` branch contains the plugin source; no GitHub Release is required. The reviewed executable baseline is commit `83c36bf7456504fc32a34893d9feee06e1c5976e`. Clone the repository into a new staging directory, then select that commit for a reproducible pi.10.5 installation:
+
+```powershell
+git clone https://github.com/Nundrian/Magazine-for-Pi-WebUI.git Magazine-Pi-source
+Set-Location -LiteralPath .\Magazine-Pi-source
+git checkout 83c36bf7456504fc32a34893d9feee06e1c5976e
+Get-Content .\magazine-pi\manifest.json
+````
+
+Confirm version 0.1.0-pi.10.5. The folder to install is `magazine-pi`, not the repository root. Stage it at a path accessible to the existing Pi host and use the supported plugin installation/update lifecycle below. Do not clone over an installed plugin or private configuration. For an already functioning deployment, do not rebuild images, recreate containers, change mounts or modify other applications just to update Magazine. If packaging is preferred, build locally with `python scripts/build_release.py` from the repository root.
+
+Read [pi.10.5 corrective notes](PI105-CORRECTIVE.md) for acceptance and rollback restrictions. Verify an idle checkpoint and preserve the actual state volume before changing the plugin.
+
 ## Fresh installation using an existing compatible Docker host
 
-Extract the plugin ZIP on Windows. Its root folder is `magazine-pi`, containing
+If using a locally built or independently verified plugin ZIP, extract it on Windows. Its root folder is `magazine-pi`, containing
 manifest.json, index.mjs, client/ and the Python service files. For a Compose
 service called `pi-web-ui`, from the folder containing its Compose file:
 
 ```powershell
-Expand-Archive -LiteralPath .\Magazine-Pi-0.1.0-pi.9.1-plugin.zip -DestinationPath .\package
+Expand-Archive -LiteralPath .\Magazine-Pi-0.1.0-pi.10.5-plugin.zip -DestinationPath .\package
 $packagePath = (Resolve-Path .\package).Path
 docker compose stop pi-web-ui
 docker compose run --rm --no-deps --volume "${packagePath}:/opt/magazine-install:ro" pi-web-ui install /opt/magazine-install/magazine-pi --data-dir /app/.pi-web
@@ -79,9 +94,9 @@ started. `"off"` is an explicit, unsafe opt-out. Check **Manage → Worker isola
 configuration inside that volume rather than assuming a Windows `data` folder.
 
 Start with `docker compose up -d`, use Pi's native token sign-in, then open
-**Plugins → Magazine**. Confirm version 0.1.0-pi.9.1. Native token, networking
+**Plugins → Magazine**. Confirm version 0.1.0-pi.10.5. Native token, networking
 and model-provider setup remain Pi's responsibility; no extra login service is
-added by Magazine. An Ollama model must also appear in Pi's configured catalogue.
+added by Magazine. Ollama chat models are discovered automatically where supported; saved model assignments are preserved.
 
 ## Update only Magazine without restarting Pi
 
@@ -115,9 +130,7 @@ See UI8-ALIGNMENT.md for exact evidence and testing limits.
 
 At idle, reinstall the exact backed-up previous plugin/config through the same
 Magazine-only procedure, or stop only the intended instance and reinstall via
-Compose. Keep runtime data and workspaces: this release requires no migration.
-Restore needed trash items with this version before reverting to a UI without
-Restore. Restoring a full runtime backup discards subsequent work and must be a
+Compose. Keep runtime data and workspaces. Do not start pi.10.5-prepared runs under pi.10.4; older code does not apply their frozen execution settings. Restore pi.10.5 workspace-local trash using pi.10.5 before rolling back. State rollback requires a consistent checkpoint. Restoring a full runtime backup discards subsequent work and must be a
 separate deliberate action. Do not start committed-result runs under a plugin
 that does not implement their protocol. Do not delete volumes/project folders.
 
