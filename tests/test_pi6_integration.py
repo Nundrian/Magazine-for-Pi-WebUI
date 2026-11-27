@@ -262,6 +262,8 @@ def test_recoverable_worker_outcomes(env, script, code):
     assert run_to_end(rpc, rid)["display_status"] == "COMPLETED"
     first, second = attempts(rpc, rid, "c1")
     assert first["code"] == code and second["status"] == "done"
+    if script == "length-once":
+        assert first["finish"] == "length"
 
 
 def test_halt_reply_stops_without_retry(env):

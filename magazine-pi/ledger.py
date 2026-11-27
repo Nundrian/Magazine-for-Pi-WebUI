@@ -153,12 +153,24 @@ def render(ledger, meta):
     for index, cid in enumerate(ledger["order"], 1):
         record = ledger["cartridges"][cid]
         if not record["attempts"]:
-            lines.append(f"| {index} | {cid} | – | | | {record['status']} | | | | unavailable | | |")
+            lines.append(f"| {index} | {cid} | â€“ | | | {record['status']} | | | | unavailable | | |")
         for a in record["attempts"]:
             cell = lambda v: str(v or "").replace("|", "\\|").replace("\n", " ")
             lines.append(f"| {index} | {cell(cid)} | {a.get('attempt_number')} | {a.get('kind', '')} | `{cell(a.get('model'))}` | "
                          f"{a.get('status')} | {_fmt_time(a.get('started'))} | {_fmt_time(a.get('finished'))} | "
                          f"{cell(a.get('session_id'))} | {tokens.fmt(a.get('tokens'))} | {cell(a.get('code'))} | {cell(retry_text(a))} |")
+    execution = [(cid, attempt) for cid in ledger["order"]
+                 for attempt in ledger["cartridges"][cid]["attempts"] if attempt.get("execution_settings")]
+    if execution:
+        lines += ["", "## Execution settings", ""]
+        for cid, attempt in execution:
+            settings = attempt["execution_settings"]
+            level = settings["effective_thinking_level"]
+            requested = settings["requested_thinking_level"]
+            enabled = settings["compaction"]["enabled"]
+            events = attempt.get("compaction_events", [])
+            lines.append(f"- **{cid}, attempt {attempt['attempt_number']}:** {requested} resolved to {level}; "
+                         f"native compaction {'enabled' if enabled else 'disabled'}, {len(events)} SDK events recorded.")
     lines += ["", "Cartridge tokens (input / output / total):"]
     lines += [f"- **{cid}:** {tokens.fmt(ledger['cartridges'][cid].get('tokens'))}" for cid in ledger["order"]]
     notes = [(cid, a.get("attempt_number"), a["note"]) for cid in ledger["order"]

@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0",
+  "workflow_name": "Pi 10.5 Acceptance B",
+  "cartridge_ids": [
+    "b01",
+    "b02",
+    "b03",
+    "b04",
+    "b05",
+    "b06",
+    "b07",
+    "b08"
+  ],
+  "cartridge_models": {
+    "b01": "ollama/hf.co/empero-ai/Qwen3.8-9B-Distill-GGUF:Q6_K",
+    "b02": "ollama/hf.co/AtomicChat/Ornith-1.5-9B-GGUF:Q6_K",
+    "b03": "ollama/hf.co/AtomicChat/Ornith-1.5-9B-GGUF:Q6_K",
+    "b04": "ollama/hf.co/empero-ai/Qwen3.8-9B-Distill-GGUF:Q6_K",
+    "b05": "ollama/hf.co/empero-ai/Qwen3.8-9B-Distill-GGUF:Q6_K",
+    "b06": "ollama/hf.co/empero-ai/Qwen3.8-9B-Distill-GGUF:Q6_K",
+    "b07": "ollama/hf.co/AtomicChat/Ornith-1.5-9B-GGUF:Q6_K",
+    "b08": "ollama/hf.co/AtomicChat/Ornith-1.5-9B-GGUF:Q6_K"
+  }
+}

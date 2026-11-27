@@ -233,6 +233,28 @@ def test_tokens_zero_placeholder_is_unavailable_not_zero(tmp_path):
     assert mixed["state"] == "partial" and mixed["total"] == 55 and mixed["rounds"] == 2 and mixed["rounds_reported"] == 1
 
 
+def test_native_compaction_usage_is_counted_once_with_separate_component(tmp_path):
+    path = session_file(tmp_path, [U(100, 10, 5)])
+    compaction = {"type": "compaction", "id": "compact1", "usage": U(50, 5, 2)}
+    compaction["usage"]["reasoning"] = 3  # already included in output
+    with path.open('a') as stream:
+        stream.write((json.dumps(compaction) + '\n') * 2)
+    snap = tokens.from_session(path, finished_normally=True)
+    assert snap['total'] == 172 and snap['rounds'] == 2 and snap['state'] == 'known'
+    assert snap['compaction']['total'] == 57 and snap['compaction']['rounds'] == 1
+    assert tokens.from_session(path, finished_normally=True) == snap
+
+
+def test_missing_native_compaction_usage_keeps_totals_partial(tmp_path):
+    for usage in (None, U(0, 0)):
+        path = session_file(tmp_path, [U(10, 1)])
+        with path.open('a') as stream:
+            stream.write(json.dumps({'type': 'compaction', 'id': 'c1', 'usage': usage}) + '\n')
+        snap = tokens.from_session(path, finished_normally=True)
+        assert snap['total'] == 11 and snap['state'] == 'partial' and snap['rounds'] == 2
+        assert snap['compaction']['state'] == 'unavailable' and snap['compaction']['total'] is None
+
+
 def test_tokens_interrupted_and_partial_tail(tmp_path):
     s = tokens.from_session(session_file(tmp_path, [U(10, 1)]), finished_normally=False)
     assert s["state"] == "partial" and s["incomplete"]

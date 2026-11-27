@@ -21,7 +21,7 @@ import beta5_helpers as h
 from magazine.durability import atomic_write
 from magazine.schema import MagazineSchemaError
 from pi_dispatch import PiDispatch
-from model_selection import select_models
+from model_selection import select_models, select_thinking
 from run_export import export_run, ExportError, redact
 import executor as ex
 import handover as ho
@@ -39,7 +39,7 @@ import pi_dispatch as PiDispatchModule
 import restore_points as rp
 import sandbox
 
-VERSION = '0.1.0-pi.10.4'
+VERSION = '0.1.0-pi.10.5'
 CORE = {'ok': True}
 for key, module in {'ar':'async_runner','state':'state','ss':'state_store',
     'doc':'document','rp':'run_preparation','ra':'run_action','rl':'run_lock',
@@ -238,7 +238,7 @@ class Service:
                 value['antiloop'] = protocol['loop_police']['enabled'] if pref is None else pref
                 cat = await self.catalogue()
                 value['model_plan'] = ui.sidecar(self, data['project_id'], value['name'],
-                    [c['id'] for c in value['document']['cartridges']], {m['id'] for m in cat['models']})
+                    [c['id'] for c in value['document']['cartridges']], {m['id']: m for m in cat['models']})
             return value
         if action in ('model_plan', 'planning_brief'):
             if data.get('project_id'):
@@ -250,11 +250,11 @@ class Service:
             cat = await self.catalogue()
             ids = [c['id'] for c in document['cartridges']]
             if action == 'model_plan':
-                return {'plan': ui.validate_plan(data.get('plan'), name, ids, {m['id'] for m in cat['models']})}
+                return {'plan': ui.validate_plan(data.get('plan'), name, ids, {m['id']: m for m in cat['models']})}
             brief = {'workflow_name': name, 'cartridge_ids': ids,
                      'available_models': cat['models'], 'available_tools': cat['tools'],
                      'cartridges': [{'order': i+1, **c} for i, c in enumerate(document['cartridges'])],
-                     'instructions': 'Suggest exact Pi catalogue IDs using schema_version 1.0, workflow_name, ordered cartridge_ids, cartridge_models and optional rationale/default_model. Use task requirements and measured local reliability where provided; otherwise mark reliability unknown. Qwen3-Coder-30B-A3B is non-thinking, not a reasoning model. Do not assume suitability for complex security/planning; prior local tool-call failures are a risk. Model-card claims and the prior 75/40/16/14 task allocation are not comparative local benchmarks. Context/memory/quantisation compatibility must be verified for the actual installation. No remote call is made by Magazine.'}
+                     'instructions': 'Suggest exact Pi catalogue IDs using schema_version 1.1, workflow_name, ordered cartridge_ids, cartridge_models and optional rationale/default_model. Optional default_thinking_level and cartridge_thinking_levels use inherit or the model-specific thinking_levels from available_models. An omitted cartridge level uses the workflow default. Explicit inherit uses Pi settings directly. Omit overrides if capabilities are uncertain. Use task requirements and measured local reliability where provided; otherwise mark reliability unknown. Qwen3-Coder-30B-A3B is non-thinking, not a reasoning model. Do not assume suitability for complex security/planning; prior local tool-call failures are a risk. Model-card claims and the prior 75/40/16/14 task allocation are not comparative local benchmarks. Context/memory/quantisation compatibility must be verified for the actual installation. No remote call is made by Magazine.'}
             return {'brief': json.dumps(brief, ensure_ascii=False, indent=2),
                     'warning': 'This brief contains workflow prompts. Review and remove sensitive content before copying it to another service.'}
         if action == 'restore_points':
@@ -564,7 +564,13 @@ class Service:
         files, manifest, _ = h._export_files(owner, rid)
         require((manifest['revision'], manifest['status']) == (record['revision'], record['run_status']), 409,
                 'Run changed during export. Retry after it has stopped')
-        files, manifest = fx.redact_delivery(files, manifest, self.export_secrets())
+        secrets = self.export_secrets()
+        files, manifest = fx.redact_delivery(files, manifest, secrets)
+        run_base = h._run_base(owner, rid)
+        ledger = lg.load(run_base)
+        if ledger is not None and h._load_meta(owner, rid).get('execution_settings'):
+            files['magazine-ledger.json'] = (json.dumps(redact(ledger, secrets), ensure_ascii=False,
+                                                       indent=2) + '\n').encode('utf-8')
         base = f"Magazine-{fx.slug(manifest.get('project_name'))}-{rid}"
         prefs = fx.preferences(self.root)
         if (mode or prefs['mode']) == 'folder':
@@ -710,6 +716,7 @@ class Service:
         payload['name'] = meta.get('name')
         payload['project_id'] = meta.get('project_id')
         payload['cartridge_models'] = meta.get('cartridge_models',{})
+        payload['execution_settings'] = meta.get('execution_settings')
         payload['export'] = h._export_record(owner,rid)
         payload['display_status'] = self.display_status(payload, rid)
         payload['queue'] = self.scheduler.describe(rid)
@@ -898,8 +905,9 @@ class Service:
         require(antiloop is None or type(antiloop) is bool, 400, 'Antiloop must be boolean')
         cat = await self.catalogue()
         original = document
+        model_catalogue = {m['id']: m for m in cat['models']}
         try:
-            document, models = select_models(document, data, {m['id'] for m in cat['models']})
+            document, models = select_models(document, data, model_catalogue)
         except ValueError as error:
             raise ApiError(400, str(error)) from error
         errors = h._validate_admission(document, models, tools, cat['models'], cat['tools'])
@@ -935,9 +943,14 @@ class Service:
         applied_plan = None
         if data.get('model_plan') is not None:
             applied_plan = ui.validate_plan(data['model_plan'], name,
-                [c['id'] for c in document['cartridges']], {m['id'] for m in cat['models']})
+                [c['id'] for c in document['cartridges']], model_catalogue)
             applied_plan['manual_overrides'] = {c['id']: models[c['job_type']] for c in document['cartridges']
                 if models[c['job_type']] != applied_plan['cartridge_models'][c['id']]}
+        assignments = {c['id']: models[c['job_type']] for c in document['cartridges']}
+        try:
+            execution_settings = select_thinking(data, assignments, model_catalogue)
+        except ValueError as error:
+            raise ApiError(400, str(error)) from error
         protocol.update(version=proto.protocol_version(protocol), prepared_by=VERSION, antiloop_frozen=False)
         rid = uuid.uuid4().hex[:12]
         Path(h._state_dir(owner,rid)).mkdir(parents=True,mode=0o700)
@@ -945,7 +958,7 @@ class Service:
         self.save_protocol(owner, rid, protocol)
         CORE['ss'].save_run_state(h._state_path(owner,rid),CORE['state'].new_ready_state([c['id'] for c in document['cartridges']]))
         self.save_meta(owner,rid,{'model_map':models,'tool_ids':tools,'owner_id':owner,
-            'cartridge_models':{c['id']:models[c['job_type']] for c in document['cartridges']},
+            'cartridge_models':assignments, 'execution_settings':execution_settings,
             'created_at':h._now(),'name':name,'project_id':project_id,'schema_version':document['schema_version'],
             'magazine_version':VERSION, **({'model_plan': applied_plan} if applied_plan else {})})
         return self.status(owner,rid)

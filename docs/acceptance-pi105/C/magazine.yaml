@@ -1,0 +1,210 @@
+schema_version: '1.0'
+name: Pi 10.5 Acceptance C
+handover_mode: result_file_v1
+recovery:
+  max_attempts: 2
+  attempt_seconds: 300
+cartridges:
+- id: c01
+  model: acceptance
+  prompt: Use the write tool to put exactly 'C c01' followed by one newline into c01.txt
+    in the designated output folder. Use the read tool to confirm the content. Publish
+    verified=true, files=["c01.txt"], note="C c01", and the checks you actually performed.
+  retry_safe: true
+  artifacts:
+    outputs:
+    - c01.txt
+- id: c02
+  model: acceptance
+  prompt: Read the verified input file c01.txt and confirm that it contains C c01.
+    Use the write tool to put exactly 'C c02' followed by one newline into c02.txt
+    in the designated output folder. Use the read tool to confirm the content. Publish
+    verified=true, files=["c02.txt"], note="C c02", and the checks you actually performed.
+  retry_safe: true
+  artifacts:
+    outputs:
+    - c02.txt
+    inputs:
+    - from: c01
+      path: c01.txt
+  handover:
+  - from: c01
+    select: /result
+    as: previous_result
+- id: c03
+  model: acceptance
+  prompt: Read the verified input file c02.txt and confirm that it contains C c02.
+    Use the write tool to put exactly 'C c03' followed by one newline into c03.txt
+    in the designated output folder. Use the read tool to confirm the content. Publish
+    verified=true, files=["c03.txt"], note="C c03", and the checks you actually performed.
+  retry_safe: true
+  artifacts:
+    outputs:
+    - c03.txt
+    inputs:
+    - from: c02
+      path: c02.txt
+  handover:
+  - from: c02
+    select: /result
+    as: previous_result
+- id: c04
+  model: acceptance
+  prompt: Read the verified input file c03.txt and confirm that it contains C c03.
+    Use the write tool to put exactly 'C c04' followed by one newline into c04.txt
+    in the designated output folder. Use the read tool to confirm the content. Publish
+    verified=true, files=["c04.txt"], note="C c04", and the checks you actually performed.
+  retry_safe: true
+  artifacts:
+    outputs:
+    - c04.txt
+    inputs:
+    - from: c03
+      path: c03.txt
+  handover:
+  - from: c03
+    select: /result
+    as: previous_result
+- id: c05
+  model: acceptance
+  prompt: Read the verified input file c04.txt and confirm that it contains C c04.
+    Use the write tool to put exactly 'C c05' followed by one newline into c05.txt
+    in the designated output folder. Use the read tool to confirm the content. Publish
+    verified=true, files=["c05.txt"], note="C c05", and the checks you actually performed.
+  retry_safe: true
+  artifacts:
+    outputs:
+    - c05.txt
+    inputs:
+    - from: c04
+      path: c04.txt
+  handover:
+  - from: c04
+    select: /result
+    as: previous_result
+- id: c06
+  model: acceptance
+  prompt: Read the verified input file c05.txt and confirm that it contains C c05.
+    Use the write tool to put exactly 'C c06' followed by one newline into c06.txt
+    in the designated output folder. Use the read tool to confirm the content. Publish
+    verified=true, files=["c06.txt"], note="C c06", and the checks you actually performed.
+  retry_safe: true
+  artifacts:
+    outputs:
+    - c06.txt
+    inputs:
+    - from: c05
+      path: c05.txt
+  handover:
+  - from: c05
+    select: /result
+    as: previous_result
+- id: c07
+  model: acceptance
+  prompt: Read the verified input file c06.txt and confirm that it contains C c06.
+    Use the write tool to put exactly 'C c07' followed by one newline into c07.txt
+    in the designated output folder. Use the read tool to confirm the content. Publish
+    verified=true, files=["c07.txt"], note="C c07", and the checks you actually performed.
+  retry_safe: true
+  artifacts:
+    outputs:
+    - c07.txt
+    inputs:
+    - from: c06
+      path: c06.txt
+  handover:
+  - from: c06
+    select: /result
+    as: previous_result
+- id: c08
+  model: acceptance
+  prompt: 'Compaction exercise in the isolated workspace. First read exactly the first
+    180 lines of EACH of these six absolute paths, in six separate read calls with
+    offset=1 and limit=180: /workspace/pi105-compaction/part-01.txt, /workspace/pi105-compaction/part-02.txt,
+    /workspace/pi105-compaction/part-03.txt, /workspace/pi105-compaction/part-04.txt,
+    /workspace/pi105-compaction/part-05.txt, /workspace/pi105-compaction/part-06.txt.
+    Read all 180 lines from each file; the full payload is the context exercise. Confirm
+    each header matches its file number. Then read the earlier verified input c07.txt
+    and confirm that it contains C c07. Use the write tool to put exactly C c08 followed
+    by one newline into c08.txt in the designated output folder. Read the output back.
+    Publish verified=true, files=["c08.txt"], note="C c08", and the checks you actually
+    performed.'
+  retry_safe: true
+  artifacts:
+    outputs:
+    - c08.txt
+    inputs:
+    - from: c07
+      path: c07.txt
+  handover:
+  - from: c07
+    select: /result
+    as: previous_result
+- id: c09
+  model: acceptance
+  prompt: Read the verified input file c08.txt and confirm that it contains C c08.
+    Use the write tool to put exactly 'C c09' followed by one newline into c09.txt
+    in the designated output folder. Use the read tool to confirm the content. Publish
+    verified=true, files=["c09.txt"], note="C c09", and the checks you actually performed.
+  retry_safe: true
+  artifacts:
+    outputs:
+    - c09.txt
+    inputs:
+    - from: c08
+      path: c08.txt
+  handover:
+  - from: c08
+    select: /result
+    as: previous_result
+- id: c10
+  model: acceptance
+  prompt: Read the verified input file c09.txt and confirm that it contains C c09.
+    Use the write tool to put exactly 'C c10' followed by one newline into c10.txt
+    in the designated output folder. Use the read tool to confirm the content. Publish
+    verified=true, files=["c10.txt"], note="C c10", and the checks you actually performed.
+  retry_safe: true
+  artifacts:
+    outputs:
+    - c10.txt
+    inputs:
+    - from: c09
+      path: c09.txt
+  handover:
+  - from: c09
+    select: /result
+    as: previous_result
+- id: c11
+  model: acceptance
+  prompt: Read the verified input file c10.txt and confirm that it contains C c10.
+    Use the write tool to put exactly 'C c11' followed by one newline into c11.txt
+    in the designated output folder. Use the read tool to confirm the content. Publish
+    verified=true, files=["c11.txt"], note="C c11", and the checks you actually performed.
+  retry_safe: true
+  artifacts:
+    outputs:
+    - c11.txt
+    inputs:
+    - from: c10
+      path: c10.txt
+  handover:
+  - from: c10
+    select: /result
+    as: previous_result
+- id: c12
+  model: acceptance
+  prompt: Read the verified input file c11.txt and confirm that it contains C c11.
+    Use the write tool to put exactly 'C c12' followed by one newline into c12.txt
+    in the designated output folder. Use the read tool to confirm the content. Publish
+    verified=true, files=["c12.txt"], note="C c12", and the checks you actually performed.
+  retry_safe: true
+  artifacts:
+    outputs:
+    - c12.txt
+    inputs:
+    - from: c11
+      path: c11.txt
+  handover:
+  - from: c11
+    select: /result
+    as: previous_result

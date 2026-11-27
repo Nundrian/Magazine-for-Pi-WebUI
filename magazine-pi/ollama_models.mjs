@@ -10,20 +10,21 @@ export function ollamaApiUrl(baseUrl, operation) {
 }
 
 export function discoveredModel(id, info, provider) {
-  const capabilities=info.capabilities;
+  const capabilities=info?.capabilities;
   if(!Array.isArray(capabilities))throw new Error('Missing model capabilities');
   if(!capabilities.includes('completion'))return null; // including embedding-only models
   const configured=provider.models?.find(m=>m.id===id);
-  if(configured)return {...configured};
   const defaults=provider.models?.find(m=>Number.isInteger(m.contextWindow)&&Number.isInteger(m.maxTokens));
   const architecture=info.model_info?.['general.architecture'];
   const trainedContext=info.model_info?.[architecture+'.context_length'];
   const contextWindow=Math.min(defaults?.contextWindow||32768,
     Number.isInteger(trainedContext)&&trainedContext>0?trainedContext:32768);
-  return {id,name:id,reasoning:capabilities.includes('thinking'),
+  const effectiveContext=configured?.contextWindow ?? contextWindow;
+  return {reasoning:capabilities.includes('thinking'),
     input:capabilities.includes('vision')?['text','image']:['text'],
-    contextWindow,maxTokens:Math.min(defaults?.maxTokens||8192,contextWindow),
-    cost:{input:0,output:0,cacheRead:0,cacheWrite:0}};
+    contextWindow:effectiveContext,maxTokens:Math.min(defaults?.maxTokens||8192,effectiveContext),
+    cost:{input:0,output:0,cacheRead:0,cacheWrite:0},
+    ...configured,id,name:configured?.name?.trim()?configured.name:id};
 }
 
 export async function syncOllamaModels(runtime, modelsPath, {fetcher=fetch,timeoutMs=3000}={}) {
@@ -51,7 +52,12 @@ export async function syncOllamaModels(runtime, modelsPath, {fetcher=fetch,timeo
     const models=(await Promise.all(names.map(async id=>{
       try {
         const model=discoveredModel(id,await request('show',{model:id}),provider);
-        if(model)ids.add(id);else status.excluded++;
+        if(!model){status.excluded++;return null;}
+        if(!Array.isArray(model.input)||!model.input.includes('text')||
+           !Number.isSafeInteger(model.contextWindow)||model.contextWindow<1||
+           !Number.isSafeInteger(model.maxTokens)||model.maxTokens<1)
+          throw new Error('Invalid chat model metadata');
+        ids.add(id);
         return model;
       } catch {warnings.push('Metadata unavailable for '+id);return null;}
     }))).filter(Boolean);

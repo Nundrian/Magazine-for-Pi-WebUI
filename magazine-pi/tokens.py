@@ -1,4 +1,4 @@
-"""Token accounting from Pi's persisted assistant-message usage.
+"""Token accounting from Pi's persisted assistant and native-compaction usage.
 
 Pi (pi-ai 1.x) stores ``usage = {input, output, cacheRead, cacheWrite,
 totalTokens, reasoning?, cost}`` on every saved assistant message, one per
@@ -51,23 +51,38 @@ def from_session(path, *, finished_normally):
         return unavailable("session_unavailable")
     complete = raw if raw.endswith(b"\n") else raw[:raw.rfind(b"\n") + 1]
     seen, rounds, reported = set(), 0, []
+    compaction_rounds, compaction_reported = 0, []
     for line in complete.decode("utf-8", "replace").splitlines():
         try:
             entry = json.loads(line)
         except ValueError:
             continue
-        message = entry.get("message") if isinstance(entry, dict) else None
-        if entry.get("type") != "message" or not isinstance(message, dict) or message.get("role") != "assistant":
+        if not isinstance(entry, dict):
             continue
-        identity = entry.get("id") or (entry.get("timestamp"), rounds)
+        kind, message = entry.get("type"), entry.get("message")
+        if kind == "compaction":
+            usage = entry.get("usage")
+        elif kind == "message" and isinstance(message, dict) and message.get("role") == "assistant":
+            usage = message.get("usage")
+        else:
+            continue
+        identity = (kind, entry.get("id") or (entry.get("timestamp"), rounds))
         if identity in seen:
             continue
         seen.add(identity)
         rounds += 1
-        value = message_usage(message.get("usage"))
+        value = message_usage(usage)
         if value is not None:
             reported.append(value)
-    return summarize(rounds, reported, finished_normally, partial_tail=complete != raw)
+        if kind == "compaction":
+            compaction_rounds += 1
+            if value is not None:
+                compaction_reported.append(value)
+    result = summarize(rounds, reported, finished_normally, partial_tail=complete != raw)
+    if compaction_rounds:
+        result["compaction"] = summarize(compaction_rounds, compaction_reported, True, partial_tail=complete != raw)
+        result["compaction"]["source"] = "pi_compaction_usage"
+    return result
 
 
 def summarize(rounds, reported, finished_normally, partial_tail=False):

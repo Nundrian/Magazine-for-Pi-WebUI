@@ -23,6 +23,17 @@ test('configured settings are preserved exactly, independent of advertised capab
   assert.deepEqual(configured,before);
 });
 
+test('Pi definitions with omitted display name and input are completed from metadata',()=>{
+  const model={id:'org/model:Q6_K',reasoning:true,contextWindow:8092,maxTokens:2048};
+  const observed=discoveredModel(model.id,metadata(['completion','vision']),{models:[model]});
+  assert.equal(observed.name,model.id);
+  assert.deepEqual(observed.input,['text','image']);
+  assert.equal(observed.reasoning,true);
+  assert.equal(observed.contextWindow,8092);
+  assert.equal(observed.maxTokens,2048);
+  assert.equal(model.name,undefined);
+});
+
 test('new models derive capabilities and retain existing local context/output limits',()=>{
   const m=discoveredModel('downloaded',metadata(['completion','vision','thinking']),provider);
   assert.deepEqual(m.input,['text','image']);assert.equal(m.reasoning,true);

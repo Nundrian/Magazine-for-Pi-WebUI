@@ -183,12 +183,12 @@ const HTML=`<style>${STYLE}</style><main class="mag">
  <div data-id="cart-tools" hidden><button class="small" data-id="expand">Expand all</button><button class="small" data-id="collapse">Collapse all</button><button class="small" data-id="select-all">Select all</button><button class="small" data-id="select-none">Select none</button></div>
  <div data-id="cartridges"></div></section>
 <section><h2>2. Models, tools and protection</h2>
- <div class="row"><label>Workflow model<select data-id="shared-model"></select></label><label class="shrink inline"><input type="checkbox" data-id="individual"> Assign models per cartridge</label></div>
+ <div class="row"><label>Workflow model<select data-id="shared-model"></select></label><label>Workflow reasoning<select data-id="workflow-thinking"></select></label><label class="shrink inline"><input type="checkbox" data-id="individual"> Assign models per cartridge</label></div>
  <p class="dim" data-id="catalogue-status" role="status"></p>
- <div class="row" data-id="bulk" hidden><label>Model for selected cartridges<select data-id="bulk-model"></select></label><div class="shrink"><button data-id="bulk-apply">Apply to selected</button></div></div>
+ <div class="row" data-id="bulk" hidden><label>Model for selected cartridges<select data-id="bulk-model"></select></label><label>Reasoning for selected cartridges<select data-id="bulk-thinking"></select></label><div class="shrink"><button data-id="bulk-apply">Apply model</button><button data-id="bulk-apply-thinking">Apply reasoning</button></div></div>
  <p><small>Selected tools apply to every cartridge. Workers run in a kernel-enforced sandbox: they can change the project workspace and their own attempt files, but cannot open Magazine's records or Pi's configuration (permission changes are detected and repaired; network access is not confined). The open chat's permission preset does not apply to workers. No tools are selected by default.</small></p><div data-id="tools"></div>
  <div class="row"><div><label class="inline"><input type="checkbox" data-id="antiloop" checked> Antiloop (stops confirmed repeated tool loops)</label></div>
-  <div data-id="mode-box"><label class="inline"><input type="radio" name="mag-mode" value="result_file_v1" checked> Committed result file (recommended)</label><label class="inline"><input type="radio" name="mag-mode" value="legacy_text"> Final text only (pi.5 compatible)</label></div></div>
+  <div data-id="mode-box"><p class="dim" data-id="mode-note" hidden></p><label class="inline"><input type="radio" name="mag-mode" value="result_file_v1" checked> Committed result file (recommended)</label><label class="inline"><input type="radio" name="mag-mode" value="legacy_text"> Final text only (pi.5 compatible)</label></div></div>
  <button class="primary" data-id="prepare" disabled>Prepare workflow</button><small>Preparation saves a READY run. Nothing executes until you choose Start.</small></section>
 <section><h2>3. Selected project</h2>
  <div data-id="run-summary"><p class="dim">Select a Magazine above to view its saved progress.</p></div><div data-id="run-confirm"></div>
@@ -219,10 +219,11 @@ export default {
     el.innerHTML=HTML;
     const q=id=>el.querySelector(`[data-id="${id}"]`);
     let runId='',runs=[],projects=[],preview=null,cat={models:[],tools:[]},closed=false,polling=false,last=null,tick=0;
-    let selection=0,dashRequest=0,fullLedger=null,projectLoadRequest=0;
-    let panel='overview',ledgerId='',ledgerHandovers={},ledgerRequest=0,planCandidate=null,planApplied=null,planRevision=0;
+    let selection=0,dashRequest=0,fullLedger=null,projectLoadRequest=0,documentValidation=0;
+    let panel='overview',ledgerId='',ledgerHandovers={},ledgerRequest=0;
+    let planCandidate=null,planApplied=null,planRevision=0,applyingPlan=false;
     let chats=[],chatId=store.get('magazine-pi-chat'),chatOffset=0,chatGeneration=null,chatRequest=0,chatBusy=false,chatListBusy=false,chatMore=false;
-    let deleteTarget=null;
+    let deleteTarget=null, deletionPending=false, deletePreviewRevision=0;
     let headerObserver=null;
     const chatListWaiters=[];
     const open=new Set();
@@ -264,7 +265,25 @@ export default {
       host.replaceChildren(box);cancel.focus();});
     const make=(tag,props={},...kids)=>{const n=document.createElement(tag);for(const [k,v] of Object.entries(props)){if(k==='text')n.textContent=v;else if(k==='cls')n.className=v;else if(k.startsWith('aria-')||k.startsWith('data-'))n.setAttribute(k,v);else n[k]=v;}n.append(...kids);return n;};
     const option=(value,label)=>make('option',{value,text:label});
-    const fillModels=(select,first='Choose a model')=>{const keep=select.value;select.replaceChildren(option('',first));for(const m of cat.models)select.append(option(m.id,m.name+' — '+m.provider));if(keep&&!cat.models.some(m=>m.id===keep)){const unavailable=option(keep,keep+' — unavailable');unavailable.disabled=true;select.append(unavailable);}select.value=keep;};
+    const thinkingLabels={inherit:'Inherit Pi setting',off:'Off',minimal:'Minimal',low:'Low',medium:'Medium',high:'High',xhigh:'Extra high',max:'Maximum'};
+    const modelInfo=id=>cat.models.find(model=>model.id===id);
+    function setThinking(select,level) {
+      if(level && ![...select.options].some(o=>o.value===level))select.append(option(level,thinkingLabels[level]));
+      select.value=level;
+    }
+    function fillThinking(select, levels, allowWorkflow=false){
+      const keep=select.value;
+      select.replaceChildren(...(allowWorkflow?[option('','Use workflow reasoning')]:[]),
+        ...['inherit',...new Set(levels)].filter(level=>thinkingLabels[level]).map(level=>option(level,thinkingLabels[level])));
+      if(keep && !Array.from(select.options).some(o=>o.value===keep)){
+        const unavailable=option(keep,thinkingLabels[keep]+' (unavailable)');
+        unavailable.disabled=true;select.append(unavailable);
+      }
+      if(keep)select.value=keep;
+    }
+    q('workflow-thinking').append(option('inherit',thinkingLabels.inherit));
+    q('bulk-thinking').append(option('','Use workflow reasoning'));
+    const fillModels=(select,first='Choose a model')=>{const keep=select.value;select.replaceChildren(option('',first));for(const m of cat.models)select.append(option(m.id,(m.name?.trim() ? m.name : (m.id.startsWith(m.provider+'/') ? m.id.slice(m.provider.length+1) : m.id))+' \u2014 '+m.provider));if(keep&&!cat.models.some(m=>m.id===keep)){const unavailable=option(keep,keep+' — unavailable');unavailable.disabled=true;select.append(unavailable);}select.value=keep;};
     const remember=async(update)=>{if(update.run_id!==undefined)store.set(LAST_RUN,update.run_id);if(update.project_id!==undefined)store.set(LAST_PROJECT,update.project_id);try{await call('view_state',{set:update});}catch{}};
     const two=(a,b)=>make('td',{},document.createTextNode(a),...(b?[make('span',{cls:'sub',text:b})]:[]));
 
@@ -310,7 +329,7 @@ export default {
         <button data-id="brief-build">Build planning brief</button><button data-id="brief-copy" disabled>Copy reviewed brief</button>
         <label>Planning brief (review and edit before copying)<textarea data-id="planning-brief"></textarea></label>
         <label>Suggested model assignments (JSON)<textarea data-id="plan-json" spellcheck="false"></textarea></label>
-        <button data-id="plan-check">Validate suggestions</button><button data-id="plan-apply" disabled>Apply suggestions</button>
+        <button data-id="plan-check">Validate suggestions</button><button data-id="plan-export">Export setup assignments</button><button data-id="plan-apply" disabled>Apply suggestions</button>
         <p data-id="plan-state" role="status">No suggestions applied.</p><div class="plan-preview" data-id="plan-preview"></div>`;
       plan.append(planContent);setup.insertBefore(q('preview-head'),setup.children[1]);setup.insertBefore(modelOverview,setup.children[2]);setup.insertBefore(plan,q('bulk'));
       const advanced=make('details',{cls:'tool-settings',open:true},make('summary',{text:'Tools and protection'}));
@@ -349,11 +368,38 @@ export default {
       // this path, so reading an older chat or ledger keeps its scroll position.
       for(let parent=el;parent;parent=parent.parentElement){if(['auto','scroll'].includes(getComputedStyle(parent).overflowY)){parent.scrollTop=0;}}
     }
+    function setupAssignments() {
+      const models=Object.fromEntries([...q('cartridges').querySelectorAll('select[data-cartridge]')]
+        .filter(input=>q('individual').checked&&input.value).map(input=>[input.dataset.cartridge,input.value]));
+      const thinking=Object.fromEntries([...q('cartridges').querySelectorAll('select[data-thinking]')]
+        .filter(input=>input.value).map(input=>[input.dataset.thinking,input.value]));
+      return {cartridge_models:models, cartridge_thinking_levels:thinking,
+        default_model:q('shared-model').value||undefined, default_thinking_level:q('workflow-thinking').value||'inherit'};
+    }
     function allocation(){
       if(!preview){q('allocation').textContent='Load a workflow to review model assignments.';return;}
-      const counts=new Map();for(const c of preview.document.cartridges){const s=q('cartridges').querySelector(`select[data-cartridge="${CSS.escape(c.id)}"]`);
-        const model=(q('individual').checked&&s?.value)||q('shared-model').value||'Unassigned';if(s?.nextElementSibling){s.nextElementSibling.textContent=model;s.nextElementSibling.title=model;}counts.set(model,(counts.get(model)||0)+1);}
-      q('allocation').textContent=[...counts].map(([m,n])=>`${n} × ${m}`).join(' · ');
+      const counts=new Map(), errors=[], available=new Set();
+      const picks=setupAssignments();
+      const models=new Map([...q('cartridges').querySelectorAll('select[data-cartridge]')].map(s=>[s.dataset.cartridge,s]));
+      const reasoning=new Map([...q('cartridges').querySelectorAll('select[data-thinking]')].map(s=>[s.dataset.thinking,s]));
+      for(const c of preview.document.cartridges){
+        const s=models.get(c.id), t=reasoning.get(c.id);
+        const model=picks.cartridge_models[c.id]||picks.default_model||'Unassigned';
+        const info=modelInfo(model), levels=info?.thinking_levels||[];
+        levels.forEach(level=>available.add(level));
+        if(t)fillThinking(t,levels,true);
+        const requested=t?.value||picks.default_thinking_level;
+        if(requested!=='inherit' && !levels.includes(requested))errors.push(c.id+' ('+model+')');
+        const effective=requested==='inherit' ? info?.inherited_thinking_level : requested;
+        if(s?.nextElementSibling){s.nextElementSibling.textContent=model;s.nextElementSibling.title=model;}
+        const label=model+(effective?' / '+thinkingLabels[effective]:'');
+        counts.set(label,(counts.get(label)||0)+1);
+      }
+      fillThinking(q('workflow-thinking'),available);
+      fillThinking(q('bulk-thinking'),available,true);
+      q('prepare').disabled=errors.length>0;
+      q('allocation').textContent=[...counts].map(([m,n])=> n+' / '+m).join(', ')+
+        (errors.length?' | Unsupported reasoning for '+errors.join(', '):'');
     }
     async function loadLedger(){
       if(!runId)return;const mine=selection,request=++ledgerRequest,rid=runId;
@@ -500,10 +546,13 @@ export default {
       for(const id of result.deleted)rpSelected.delete(id);await renderManage();message(`${result.message} ${formatBytes(result.reclaimed_bytes)} reclaimed.`);
     }
     async function confirmDelete(kind,id){
+      if(deletionPending)return;
+      const revision=++deletePreviewRevision;
       let text;if(kind==='run'){const p=await call('delete_preview',{run_id:id});text=p.message+' Removed: '+p.removed.join(', ')+'. Kept: '+p.kept.join(', ')+'.';}
       else text='Remove this workflow template from the library into recoverable Magazine trash. Saved run snapshots, actual project files, Input ZIPs and exports are kept. Live dependencies block deletion.';
       const name=(kind==='run'?runs.find(r=>r.run_id===id):projects.find(p=>p.workflow_id===id))?.name||id;
-      deleteTarget={kind,id};q('delete-summary').textContent=`Delete ${kind==='run'?'saved work':'workflow'} “${name}”? `+text;q('delete-confirm').disabled=false;q('delete-dialog').hidden=false;q('delete-cancel').focus();
+      if(closed||deletePreviewRevision!==revision||panel!=='manage')return;
+      deleteTarget={kind,id};q('delete-summary').textContent=`Delete ${kind==='run'?'saved work':'workflow'} “${name}”? `+text;q('delete-confirm').disabled=false;q('delete-dialog').hidden=false;q('delete-cancel').focus();q('delete-dialog').scrollIntoView?.({block:'nearest'});
     }
     layout();
     for(const id of ['chat-search','chat-run-filter','chat-model-filter','chat-status-filter'])q(id).addEventListener(id==='chat-search'?'input':'change',chatList);
@@ -516,26 +565,55 @@ export default {
       const v=await call('planning_brief',{project_id:preview.project_id||'',magazine:JSON.stringify(preview.document)});q('planning-brief').value=v.warning+'\n\n'+v.brief;q('brief-copy').disabled=false;message('Planning brief ready. Review and edit sensitive content before copying.');});
     button('brief-copy',async()=>{if(!q('brief-consent').checked)throw new Error('Review the sensitive-content warning before copying');await navigator.clipboard.writeText(q('planning-brief').value);message('Planning brief copied. Review it before sharing.');});
     q('brief-consent').addEventListener('change',()=>{q('brief-copy').disabled=!q('brief-consent').checked||!q('planning-brief').value;});
-    q('plan-json').addEventListener('input',()=>{planCandidate=null;q('plan-apply').disabled=true;q('plan-state').textContent='Suggestions changed. Validate before applying.';});
-    button('plan-check',async()=>{planCandidate=null;q('plan-apply').disabled=true;q('plan-state').textContent='No validated suggestions applied. Review any validation error above.';if(!preview)throw new Error('Load a workflow first');const revision=planRevision;
-      const v=await call('model_plan',{project_id:preview.project_id||'',magazine:JSON.stringify(preview.document),plan:q('plan-json').value});if(revision!==planRevision)return;
+    q('plan-json').addEventListener('input',()=>{planRevision++;planCandidate=null;q('plan-preview').replaceChildren();q('plan-apply').disabled=true;q('plan-state').textContent=planApplied?'Suggestions changed. Current setup still uses the applied assignments.':'Suggestions changed. Validate before applying.';});
+    button('plan-check',async()=>{planCandidate=null;q('plan-apply').disabled=true;q('plan-state').textContent='No validated suggestions applied. Review any validation error above.';if(!preview)throw new Error('Load a workflow first');const revision=++planRevision;
+      let v;
+      try{v=await call('model_plan',{project_id:preview.project_id||'',magazine:JSON.stringify(preview.document),plan:q('plan-json').value});}
+      catch(error){if(revision===planRevision)throw error;return;}
+      if(closed||revision!==planRevision)return;
       planCandidate=v.plan;q('plan-preview').replaceChildren(...v.plan.cartridge_ids.map(id=>make('p',{text:`${id}: ${v.plan.cartridge_models[id]}${v.plan.rationale[id]?' — '+v.plan.rationale[id]:''}`})));
-      q('plan-state').textContent='All assignments are valid in the current Pi catalogue. Review, then Apply.';q('plan-apply').disabled=false;message('Suggestions validated. Review them before Apply.');});
-    button('plan-apply',async()=>{if(!planCandidate||!preview)throw new Error('Validate suggestions first');const revision=planRevision;
-      const v=await call('model_plan',{project_id:preview.project_id||'',magazine:JSON.stringify(preview.document),plan:planCandidate});if(revision!==planRevision)return;
+      q('plan-state').textContent='All assignments are valid in the current Pi catalogue. Review, then Apply.';q('plan-apply').disabled=applyingPlan;message('Suggestions validated. Review them before Apply.');});
+    button('plan-apply',async()=>{if(applyingPlan)return;if(!planCandidate||!preview)throw new Error('Validate suggestions first');
+      const revision=planRevision;applyingPlan=true;q('plan-apply').disabled=true;
+      let v;try{v=await call('model_plan',{project_id:preview.project_id||'',magazine:JSON.stringify(preview.document),plan:planCandidate});}
+      catch(error){if(revision===planRevision)throw error;return;}
+      finally{applyingPlan=false;q('plan-apply').disabled=!planCandidate;}
+      if(closed||revision!==planRevision)return;
       const selects=[...q('cartridges').querySelectorAll('select[data-cartridge]')];if(selects.some(s=>!v.plan.cartridge_models[s.dataset.cartridge]))throw new Error('Workflow changed; reload suggestions');
       const changes=selects.map(s=>`${s.dataset.cartridge}: ${(q('individual').checked&&s.value)||q('shared-model').value||'Unassigned'} → ${v.plan.cartridge_models[s.dataset.cartridge]}${v.plan.rationale[s.dataset.cartridge]?' — '+v.plan.rationale[s.dataset.cartridge]:''}`);
-      q('individual').checked=true;q('shared-model').value='';q('bulk').hidden=false;for(const s of selects){s.hidden=false;s.value=v.plan.cartridge_models[s.dataset.cartridge];}
-      planApplied=v.plan;q('workflow-steps').open=true;q('plan-state').textContent='Applied to setup only. You may override models manually; Prepare and Start are still separate actions.';q('plan-preview').replaceChildren(...changes.map(text=>make('p',{text})));allocation();message('Suggestions applied to setup. Review manual overrides, then Prepare.');});
+      q('individual').checked=true;q('shared-model').value='';q('bulk').hidden=false;q('bulk-apply').disabled=false;for(const s of selects){s.hidden=false;s.value=v.plan.cartridge_models[s.dataset.cartridge];}
+      if(v.plan.schema_version==='1.1'){
+        setThinking(q('workflow-thinking'),v.plan.default_thinking_level??'inherit');
+        for(const input of q('cartridges').querySelectorAll('select[data-thinking]'))
+          setThinking(input,v.plan.cartridge_thinking_levels?.[input.dataset.thinking]??'');
+      }
+      planApplied=v.plan;planCandidate=null;q('plan-apply').disabled=true;q('workflow-steps').open=true;q('plan-state').textContent='Applied to setup only. You may override models manually; Prepare and Start are still separate actions.';q('plan-preview').replaceChildren(...changes.map(text=>make('p',{text})));allocation();message('Suggestions applied to setup. Review manual overrides, then Prepare.');});
     button('rp-select-all',()=>{for(const p of restorePoints)if(p.can_delete)rpSelected.add(p.trash_id);for(const b of q('manage-trash').querySelectorAll('input[type=checkbox]'))if(!b.disabled)b.checked=true;q('rp-delete-selected').disabled=!rpSelected.size;});
     button('rp-delete-selected',()=>deleteRestorePoints([...rpSelected]));
     button('rp-delete-all',()=>deleteRestorePoints([],true));
-    button('delete-cancel',()=>{deleteTarget=null;q('delete-dialog').hidden=true;q('delete-confirm').disabled=true;});
-    button('delete-confirm',async()=>{if(!deleteTarget)return;const {kind,id}=deleteTarget;q('delete-confirm').disabled=true;
-      let result;try{result=await call(kind==='run'?'delete_run':'delete_template',{...(kind==='run'?{run_id:id}:{project_id:id}),confirmation:id});}catch(error){q('delete-confirm').disabled=false;throw error;}
+    button('delete-cancel',()=>{if(deletionPending)return;deletePreviewRevision++;deleteTarget=null;q('delete-dialog').hidden=true;q('delete-confirm').disabled=true;});
+    button('delete-confirm',async()=>{if(!deleteTarget||deletionPending)return;const {kind,id}=deleteTarget;
+      deletionPending=true;q('delete-confirm').disabled=true;q('delete-cancel').disabled=true;
+      let result;try{result=await call(kind==='run'?'delete_run':'delete_template',{...(kind==='run'?{run_id:id}:{project_id:id}),confirmation:id});}
+      catch(error){q('delete-confirm').disabled=false;throw error;}
+      finally{deletionPending=false;q('delete-cancel').disabled=false;}
       q('delete-dialog').hidden=true;deleteTarget=null;if(kind==='run'&&runId===id)await selectRun('');if(kind==='template'&&preview?.project_id===id){preview=null;planRevision++;q('preview-head').replaceChildren();q('cartridges').replaceChildren();q('prepare').disabled=true;}
       await refresh();await renderManage();message(result.message);});
-    q('shared-model').addEventListener('change',allocation);q('individual').addEventListener('change',allocation);q('cartridges').addEventListener('change',allocation);
+    function configurationChanged(){
+      if(applyingPlan){planRevision++;planCandidate=null;}
+      allocation();
+    }
+    for(const id of ['shared-model','workflow-thinking','individual','cartridges'])
+      q(id).addEventListener('change',configurationChanged);
+    button('plan-export',async()=>{
+      if(!preview)throw new Error('Load a workflow first');
+      const plan={schema_version:'1.1',workflow_name:preview.name,
+        cartridge_ids:preview.document.cartridges.map(c=>c.id),...setupAssignments()};
+      await call('model_plan',{project_id:preview.project_id||'',magazine:JSON.stringify(preview.document),plan});
+      const url=URL.createObjectURL(new Blob([JSON.stringify(plan,null,2)+'\n'],{type:'application/json'}));
+      const link=make('a',{href:url,download:'model-assignments.json'});
+      document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+    });
 
     // ------------------------------------------------------------ workflow
     function renderProjects(){
@@ -551,9 +629,20 @@ export default {
       q('plan-state').textContent=value.model_plan?.state==='invalid'?value.model_plan.error:value.model_plan?.state==='valid'?'Imported suggestions are available. Validate and explicitly Apply to setup.':'No suggestions applied.';
       q('prepare').disabled=!doc;q('cart-tools').hidden=!doc;q('workflow-steps').open=doc.cartridges.length<=8;q('workflow-steps-title').textContent=`Workflow steps — ${doc.cartridges.length} · in order`;
       const declared=proto.declared_mode;
-      for(const r of el.querySelectorAll('input[name=mag-mode]')){r.disabled=Boolean(declared);if(declared)r.checked=r.value===proto.handover_mode;}
       const needsFiles=Object.values(proto.cartridges||{}).some(d=>d.handover?.length||d.inputs?.length||d.outputs?.length);
-      if(needsFiles){for(const r of el.querySelectorAll('input[name=mag-mode]'))if(r.value==='legacy_text')r.disabled=true;el.querySelector('input[name=mag-mode][value=result_file_v1]').checked=true;}
+      const fixed=declared?proto.handover_mode:needsFiles?'result_file_v1':'';
+      const modeKey=JSON.stringify([value.project_id||'',value.name,doc.cartridges.map(c=>c.id)]);
+      for(const label of q('mode-box').querySelectorAll('label')){
+        const radio=label.querySelector('input');
+        radio.disabled=Boolean(fixed);radio.checked=radio.value===(fixed||store.get('magazine-pi-handover-'+modeKey)||'result_file_v1');
+        radio.onchange=()=>{if(!fixed&&radio.checked)store.set('magazine-pi-handover-'+modeKey,radio.value);};
+        label.hidden=Boolean(fixed);
+      }
+      const modeNote=q('mode-note');modeNote.hidden=!fixed;
+      modeNote.textContent=fixed==='legacy_text'?'Final text only is required by this workflow.':
+        needsFiles?'Committed result files are required for handovers and file dependencies.':
+        'Committed result files are required by this workflow.';
+      q('workflow-thinking').value='inherit';
       if(typeof value.antiloop==='boolean')q('antiloop').checked=value.antiloop;
       const rec=proto.recovery||{};
       q('preview-head').replaceChildren(make('p',{},make('span',{cls:'badge',text:doc.cartridges.length+' cartridges'}),
@@ -571,7 +660,9 @@ export default {
         const title=make('span',{cls:'cart-title'},make('span',{cls:'disclosure',text:'▸'}),document.createTextNode(`${i+1} · ${c.id}`),make('span',{cls:'dim',text:info}));
         const modelCell=make('label',{cls:'cart-model-cell'},document.createTextNode(`AI model for step ${i+1}`),sel,make('span',{cls:'shared-pick',text:'Uses workflow model'}));
         const prompt=c.prompt||'';const sum=make('summary',{},box,title,modelCell,make('span',{cls:'prompt-preview',text:prompt.slice(0,220)+(prompt.length>220?'…':'')}));
-        q('cartridges').append(make('details',{cls:'cart'},sum,make('pre',{text:c.prompt})));
+        const reasoning=make('select',{'aria-label':'Reasoning for '+c.id});
+        reasoning.dataset.thinking=c.id;
+        q('cartridges').append(make('details',{cls:'cart'},sum,make('label',{},document.createTextNode('Reasoning'),reasoning),make('pre',{text:c.prompt})));
       }
       const pick=declaredModels(doc.cartridges,cat.models);
       q('shared-model').value='';q('individual').checked=false;
@@ -579,10 +670,10 @@ export default {
       if(pick.shared){q('shared-model').value=pick.shared;}
       else if(Object.keys(pick.perCartridge).length){q('individual').checked=true;
         for(const s of q('cartridges').querySelectorAll('select[data-cartridge]')){s.hidden=false;if(pick.perCartridge[s.dataset.cartridge])s.value=pick.perCartridge[s.dataset.cartridge];}}
-      q('bulk').hidden=!q('individual').checked;allocation();
+      q('bulk').hidden=false;q('bulk-apply').disabled=!q('individual').checked;allocation();
     }
     async function loadProject(id,announce=true){
-      if(!id)return;const request=++projectLoadRequest;const value=await call('preview',{project_id:id});if(closed||request!==projectLoadRequest)return;if(!value.valid)throw new Error(value.error||'Invalid workflow');
+      if(!id)return;documentValidation++;const request=++projectLoadRequest;const value=await call('preview',{project_id:id});if(closed||request!==projectLoadRequest)return;if(!value.valid)throw new Error(value.error||'Invalid workflow');
       showPreview({...value,project_id:id});q('projects').value=id;q('load-workflow').disabled=false;await remember({project_id:id});
       if(announce)message('Workflow loaded. Review prompts, assign models, then Prepare.');
     }
@@ -624,12 +715,23 @@ export default {
       const request=++dashRequest;const value=await call('runs');
       if(request!==dashRequest||closed)return; // a newer refresh owns the view
       runs=value.runs;renderDashboard(value.scheduler);
+      // Manage may have opened before the final executor cleanup. Keep its
+      // existing rows current without replacing focused controls or dialogs.
+      for(const button of q('manage-runs').querySelectorAll('[data-delete-run]')){
+        const r=runs.find(run=>run.run_id===button.dataset.deleteRun);
+        button.disabled=!r||isLive(r);
+        button.title=button.disabled?'Active or queued work cannot be deleted.':'';
+        if(r)button.parentElement.querySelector('strong').textContent=`${r.name||'Workflow'} · ${r.run_id} · ${r.display_status}`;
+      }
       if(runId&&!runs.some(r=>r.run_id===runId)){selection++;runId='';q('run-header').hidden=true;q('run-summary').replaceChildren(make('p',{cls:'dim',text:'The selected project is no longer available. Select another project.'}));}
     }
     // ------------------------------------------------------------- ledger
     function attemptBlock(c,a){
       const t=a.tokens||{};const n=k=>t[k]==null?'unavailable':Number(t[k]).toLocaleString();
-      const facts=[['Model',a.model],['Kind',a.kind],['Started',a.started||'unavailable'],['Finished',a.finished||'unavailable'],
+      const facts=[['Model',a.model],['Kind',a.kind],
+        ['Requested reasoning',a.execution_settings?.requested_thinking_level],
+        ['Effective reasoning',a.execution_settings?.effective_thinking_level],
+        ['Compaction events',a.compaction_events?.map(event=>event.phase+' ('+event.reason+')').join(', ')],['Started',a.started||'unavailable'],['Finished',a.finished||'unavailable'],
         ['Session',a.session_id||'none'],['Tokens in / out / total',`${n('input')} / ${n('output')} / ${n('total')} · ${t.available?(t.incomplete?'incomplete':'complete'):'unavailable'}`],
         ['Cache read / write',`${n('cache_read')} / ${n('cache_write')}`],['Timeout',a.timeout_seconds?`${a.timeout_seconds} s`:''],
         ['Files',(a.outputs||[]).map(f=>`${f.path} (${f.bytes} B)`).join(', ')||'none reported'],
@@ -649,7 +751,10 @@ export default {
       const c=rows.find(c=>c.id===ledgerId);if(!c){q('ledger').replaceChildren(make('p',{text:'No cartridges recorded.'}));return;}
       const rec=fullLedger?.cartridges?.[c.id],attempts=rec?.attempts||[],t=c.tokens||{};
       const n=k=>t[k]==null?'unavailable':Number(t[k]).toLocaleString(),times=attempts.flatMap(a=>[a.started,a.finished]).filter(Boolean).sort();
-      const facts=[['Status',c.status],['Exact model',c.model||r.cartridge_models?.[c.id]||'unavailable'],['Attempts',`${c.attempts??attempts.length} / 5`],
+      const facts=[['Status',c.status],['Exact model',c.model||r.cartridge_models?.[c.id]||'unavailable'],['Attempts recorded',c.attempts??attempts.length],
+        ['Automatic attempts per start',r.protocol?.legacy||r.protocol?.handover_mode==='legacy_text'?1:(r.protocol?.recovery?.max_attempts??'Unavailable')],
+        ['Prepared reasoning',r.execution_settings?.[c.id]?.effective_thinking_level??'Historical setting'],
+        ['Native compaction',r.execution_settings?.[c.id]?.compaction?.enabled===true?'Enabled':r.execution_settings?.[c.id]?'Disabled':'Historical setting'],
         ['Tokens input / output / total',`${n('input')} / ${n('output')} / ${n('total')}`],['Cache read / write',`${n('cache_read')} / ${n('cache_write')}`],
         ['Usage completeness',t.attempts?t.available?(t.incomplete?'Incomplete: some usage is unavailable or the attempt is active.':'Complete reported usage'):'Unavailable: no usage reported.':'No attempts yet.'],
         ['Started',attempts[0]?.started||'Not started'],['Finished',attempts.length?attempts[attempts.length-1].finished||'Still active / not recorded':'Not started'],
@@ -749,7 +854,7 @@ export default {
       const toolsChanged=JSON.stringify(cat.tools)!==JSON.stringify(models.tools);
       cat=models;
       if(changed){fillModels(q('shared-model'));fillModels(q('bulk-model'));
-        for(const s of q('cartridges').querySelectorAll('select'))fillModels(s,'Use workflow model');
+        for(const s of q('cartridges').querySelectorAll('select[data-cartridge]'))fillModels(s,'Use workflow model');
         allocation();}
       if(toolsChanged){const chosen=new Set([...q('tools').querySelectorAll('input:checked')].map(i=>i.value));q('tools').replaceChildren();
         for(const tool of cat.tools){const input=make('input',{type:'checkbox',value:tool.id,checked:chosen.has(tool.id)});q('tools').append(make('label',{cls:'inline',title:tool.description||''},input,document.createTextNode(' '+tool.name)));}}
@@ -775,13 +880,13 @@ export default {
     q('scheduler-mode').addEventListener('change',attempt(async()=>{const mode=q('scheduler-mode').value;q('scheduler-mode').disabled=true;
       try{await call('set_scheduler',{mode});message(`Scheduling set to ${mode==='round_robin'?'Round Robin':'Sequential'}; it applies at the next committed cartridge boundary.`);}
       finally{q('scheduler-mode').disabled=false;await loadRuns();}}));
-    q('projects').addEventListener('change',()=>{projectLoadRequest++;preview=null;planCandidate=null;planApplied=null;planRevision++;q('prepare').disabled=true;q('load-workflow').disabled=!q('projects').value;q('preview-head').replaceChildren();q('cartridges').replaceChildren();q('cart-tools').hidden=true;q('plan-apply').disabled=true;allocation();message('Choose Load your workflow to review the selected workflow before preparing it.');});
+    q('projects').addEventListener('change',()=>{projectLoadRequest++;documentValidation++;preview=null;planCandidate=null;planApplied=null;planRevision++;q('prepare').disabled=true;q('load-workflow').disabled=!q('projects').value;q('preview-head').replaceChildren();q('cartridges').replaceChildren();q('cart-tools').hidden=true;q('plan-apply').disabled=true;allocation();message('Choose Load your workflow to review the selected workflow before preparing it.');});
     button('load-workflow',async()=>{const id=q('projects').value;if(!id)throw new Error('Choose a workflow first');await loadProject(id);if(preview?.project_id===id)await showPanel('setup');});
     button('manage-workflows',()=>showPanel('manage'));
     q('previous-runs').addEventListener('change',()=>{q('view-previous').disabled=!q('previous-runs').value;});
     button('view-previous',async()=>{const id=q('previous-runs').value;if(!id)throw new Error('Choose previous work first');await selectRun(id);await showPanel('overview');message('Previous work loaded. Nothing was started.');});
     button('refresh-previous',loadRuns);
-    q('individual').addEventListener('change',()=>{for(const s of q('cartridges').querySelectorAll('select'))s.hidden=!q('individual').checked;q('bulk').hidden=!q('individual').checked;if(q('individual').checked)q('workflow-steps').open=true;});
+    q('individual').addEventListener('change',()=>{for(const s of q('cartridges').querySelectorAll('select[data-cartridge]'))s.hidden=!q('individual').checked;q('bulk-apply').disabled=!q('individual').checked;if(q('individual').checked)q('workflow-steps').open=true;});
     q('results-box').addEventListener('toggle',attempt(async()=>{if(q('results-box').open&&runId)await loadResults();}));
     q('markdown-box').addEventListener('toggle',attempt(async()=>{if(q('markdown-box').open&&runId)await loadMarkdown();}));
     q('run-antiloop').addEventListener('change',attempt(async()=>{await call('set_antiloop',{run_id:runId,enabled:q('run-antiloop').checked});await progress(false);message('Antiloop setting saved for this READY run.');}));
@@ -790,23 +895,35 @@ export default {
     button('collapse',()=>{for(const d of q('cartridges').querySelectorAll('details'))d.open=false;});
     button('select-all',()=>{for(const b of q('cartridges').querySelectorAll('input[data-select]'))b.checked=true;});
     button('select-none',()=>{for(const b of q('cartridges').querySelectorAll('input[data-select]'))b.checked=false;});
+    button('bulk-apply-thinking',()=>{
+      const chosen=[...q('cartridges').querySelectorAll('input[data-select]:checked')].map(b=>b.dataset.select);
+      if(!chosen.length)throw new Error('Select cartridges first');
+      for(const id of chosen)setThinking(q('cartridges').querySelector('select[data-thinking="'+CSS.escape(id)+'"]'),q('bulk-thinking').value);
+      configurationChanged();
+    });
     button('bulk-apply',()=>{const model=q('bulk-model').value;const chosen=[...q('cartridges').querySelectorAll('input[data-select]:checked')].map(b=>b.dataset.select);if(!chosen.length)throw new Error('Select cartridges first');
-      for(const id of chosen)q('cartridges').querySelector(`select[data-cartridge="${CSS.escape(id)}"]`).value=model;message(`Model ${model||'(workflow model)'} assigned to ${chosen.length} cartridge(s).`);allocation();});
+      for(const id of chosen)q('cartridges').querySelector('select[data-cartridge="'+CSS.escape(id)+'"]').value=model;message(`Model ${model||'(workflow model)'} assigned to ${chosen.length} cartridge(s).`);configurationChanged();});
     button('reload',refresh);
-    button('validate',async()=>{const value=await call('validate',{magazine:q('json').value});showPreview(value);q('projects').value='';await remember({project_id:null});message('Document validated.');await showPanel('setup');});
+    button('validate',async()=>{
+      const revision=++documentValidation;
+      projectLoadRequest++;
+      const value=await call('validate',{magazine:q('json').value});
+      if(closed||revision!==documentValidation)return;
+      showPreview(value);q('projects').value='';await remember({project_id:null});message('Document validated.');await showPanel('setup');
+    });
     button('import',async()=>{
       const file=q('zip').files[0];if(!file)throw new Error('Select a workflow ZIP');if(file.size>8*1024*1024)throw new Error('ZIP exceeds 8 MiB');
       const response=await fetch('/plugins-api/magazine-pi/upload',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/octet-stream','X-Magazine-File-Name':encodeURIComponent(file.name)},body:file});
       const upload=await response.json();if(!upload.ok)throw new Error(upload.error||'ZIP import failed');await refresh();await loadProject(upload.result.project_id,false);message(upload.result.message);await showPanel('setup');
     });
     button('prepare',async()=>{
-      if(!preview)throw new Error('Load and validate a workflow');const cartridge_models={};
-      if(q('individual').checked)for(const s of q('cartridges').querySelectorAll('select[data-cartridge]'))if(s.value)cartridge_models[s.dataset.cartridge]=s.value;
-      const default_model=q('shared-model').value;
+      if(!preview)throw new Error('Load and validate a workflow');
+      const assignments=setupAssignments();
+      const {default_model,cartridge_models}=assignments;
       if(!default_model&&preview.document.cartridges.some(c=>!cartridge_models[c.id]))throw new Error('Choose a workflow model or a model for every cartridge');
       const tool_ids=[...q('tools').querySelectorAll('input:checked')].map(i=>i.value);
       const mode=el.querySelector('input[name=mag-mode]:checked')?.value;
-      const data={magazine:JSON.stringify(preview.document),project_id:preview.project_id||'',...(default_model?{default_model}:{}),cartridge_models,tool_ids,antiloop:q('antiloop').checked,...(planApplied?{model_plan:planApplied}:{})};
+      const data={magazine:JSON.stringify(preview.document),project_id:preview.project_id||'',...assignments,tool_ids,antiloop:q('antiloop').checked,...(planApplied?{model_plan:planApplied}:{})};
       if(!preview.protocol?.declared_mode&&mode)data.handover_mode=mode;
       const run=await call('prepare',data);await loadRuns();await selectRun(run.run_id);message('Workflow READY. Review the prepared run, then choose Start workflow.');await showPanel('overview');
     });

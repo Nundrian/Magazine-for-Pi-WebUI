@@ -7,8 +7,8 @@ restore point permanently removes that folder and reclaims its storage.
 
 Safety rules (all re-checked immediately before every deletion):
 
-* Only folders named by a 32-hex transaction token directly under ``trash/``
-  are ever considered; nothing outside that folder is opened for deletion.
+* A restore point is anchored beneath the state trash. A managed workspace can
+  have a retained sibling on its original filesystem, named by the same token.
 * Deletion never follows symbolic links and never crosses into another
   filesystem; links are removed as links, so their targets are untouched.
 * A deletion that was interrupted (``intent.json`` present) is protected: its
@@ -30,6 +30,9 @@ import os
 import re
 import stat
 import time
+from pathlib import Path
+
+from ui_support import directory, sync_directory, workspace_trash_name
 
 TOKEN = re.compile(r"[a-f0-9]{32}\Z")
 RECORD_LIMIT = 64 * 1024
@@ -140,9 +143,22 @@ class RestorePoints:
             if record:
                 item.update(kind=record.get("kind"), id=record.get("id"),
                             created_at=record.get("created_at") or item["created_at"])
+                if record.get("workspace_location") == "local":
+                    try:
+                        extra = self._workspace(token, record, allow_missing=deleting is not None or "restoring.json" in names or
+                                                record.get("state") == "interrupted")
+                    except (OSError, ValueError) as exc:
+                        item["protected_reason"] = f"Retained workspace is unavailable: {exc}"
+                        return item
+                    for key, amount in zip(("bytes", "reclaimable_bytes", "files", "shared_files"), extra):
+                        item[key] += amount
             if deleting is not None:
                 item.update(state="deleting", can_delete=True,
                             reason="A permanent deletion was interrupted; delete again to finish it")
+            elif "restoring.json" in names and record:
+                item.update(state="restoring", can_restore=True,
+                            reason="Restore in progress or interrupted",
+                            protected_reason="Finish restoring this run before permanent deletion.")
             elif intent is not None and "trash.json" not in names:
                 item.update(state="interrupted", reason="An interrupted move to the trash",
                             protected_reason="A deletion was interrupted; part of this work may still be in its "
@@ -171,6 +187,33 @@ class RestorePoints:
             return item
         finally:
             os.close(fd)
+
+    def _workspace(self, token, record, *, allow_missing=False, remove=False):
+        if record.get("kind") != "run" or not record.get("workspace_inode"):
+            raise RestorePointError("Invalid retained workspace identity")
+        root = Path(self.service.config["cwd"]) / "magazine-runs"
+        name = workspace_trash_name(token)
+        with directory(root) as parent:
+            try:
+                fd = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
+            except FileNotFoundError:
+                if allow_missing:
+                    return (0, 0, 0, 0)
+                raise
+            try:
+                info = os.fstat(fd)
+                if info.st_ino != record["workspace_inode"] or info.st_dev != os.fstat(parent).st_dev:
+                    raise RestorePointError("Retained workspace does not match the saved identity")
+                if not remove:
+                    return _usage(fd, info.st_dev, [200000])
+                _remove_tree(fd, info.st_dev)
+                current = os.stat(name, dir_fd=parent, follow_symlinks=False)
+                if (info.st_dev, info.st_ino) != (current.st_dev, current.st_ino):
+                    raise RestorePointError("Retained workspace changed during deletion")
+                os.rmdir(name, dir_fd=parent)
+                sync_directory(parent)
+            finally:
+                os.close(fd)
 
     @staticmethod
     def _run_summary(fd):
@@ -264,8 +307,9 @@ class RestorePoints:
                 try:
                     if os.fstat(fd).st_dev != device:
                         raise RestorePointError("A restore point is on another filesystem; it was not deleted")
-                    marker = {"deleting_at": time.time(), "record": {k: item.get(k) for k in ("kind", "id")},
-                              "bytes": item["bytes"]}
+                    previous = _read_json(fd, "deleting.json")
+                    record = (previous or {}).get("record") or _read_json(fd, "trash.json") or {}
+                    marker = {"deleting_at": time.time(), "record": record, "bytes": item["bytes"]}
                     if "deleting.json" not in os.listdir(fd):
                         # Written to a temporary name and renamed: the marker is
                         # either absent or complete, never half written.
@@ -281,6 +325,8 @@ class RestorePoints:
                             os.fsync(stream.fileno())
                         os.rename(temp, "deleting.json", src_dir_fd=fd, dst_dir_fd=fd)
                         os.fsync(fd)
+                    if record.get("workspace_location") == "local":
+                        self._workspace(token, record, allow_missing=previous is not None, remove=True)
                     _remove_tree(fd, device, keep=("deleting.json",))
                     os.unlink("deleting.json", dir_fd=fd)
                 finally:

@@ -88,6 +88,29 @@ test('a legacy server response without done/order lists does not break the view'
   } finally { if (typeof v.handle === "function") v.handle(); v.dom.window.close(); }
 });
 
+test('Manage updates a finished run without replacing its focused deletion control', {skip}, async () => {
+  const status = {...damaged, status:'RUNNING', display_status:'RUNNING', active:true};
+  const v = await mount(status);
+  try {
+    v.q('nav-manage').click();
+    await new Promise(r => setTimeout(r, 100));
+    const button = v.el.querySelector(`[data-delete-run="${status.run_id}"]`);
+    assert.equal(button.disabled, true);
+    Object.assign(status, {status:'COMPLETED', display_status:'COMPLETED', active:false});
+    v.q('progress').click();
+    await new Promise(r => setTimeout(r, 100));
+    assert.equal(v.el.querySelector(`[data-delete-run="${status.run_id}"]`), button);
+    assert.equal(button.disabled, false);
+    assert.match(button.parentElement.textContent, /COMPLETED/);
+    button.focus();
+    Object.assign(status, {status:'READY', display_status:'QUEUED', active:false});
+    v.q('progress').click();
+    await new Promise(r => setTimeout(r, 100));
+    assert.equal(button.disabled, true, 'queued work remains protected');
+    assert.deepEqual(v.errors, []);
+  } finally { v.handle(); v.dom.window.close(); }
+});
+
 test('Manage lists restore points with size, run, time and protection', {skip}, async () => {
   const v = await mount(damaged);
   try {

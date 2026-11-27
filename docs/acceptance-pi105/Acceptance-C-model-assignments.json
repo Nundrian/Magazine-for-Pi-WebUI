@@ -1,0 +1,38 @@
+{
+  "schema_version": "1.1",
+  "workflow_name": "Pi 10.5 Acceptance C",
+  "cartridge_ids": [
+    "c01",
+    "c02",
+    "c03",
+    "c04",
+    "c05",
+    "c06",
+    "c07",
+    "c08",
+    "c09",
+    "c10",
+    "c11",
+    "c12"
+  ],
+  "cartridge_models": {
+    "c01": "ollama/hf.co/empero-ai/Qwen3.8-9B-Distill-GGUF:Q6_K",
+    "c02": "ollama/hf.co/AtomicChat/Ornith-1.5-9B-GGUF:Q6_K",
+    "c03": "ollama/hf.co/AtomicChat/Ornith-1.5-9B-GGUF:Q6_K",
+    "c04": "ollama/hf.co/empero-ai/Qwen3.8-9B-Distill-GGUF:Q6_K",
+    "c05": "ollama/hf.co/empero-ai/Qwen3.8-9B-Distill-GGUF:Q6_K",
+    "c06": "ollama/hf.co/empero-ai/Qwen3.8-9B-Distill-GGUF:Q6_K",
+    "c07": "ollama/hf.co/AtomicChat/Ornith-1.5-9B-GGUF:Q6_K",
+    "c08": "ollama/hf.co/AtomicChat/Ornith-1.5-9B-GGUF:Q6_K",
+    "c09": "ollama/hf.co/empero-ai/Qwen3.8-9B-Distill-GGUF:Q6_K",
+    "c10": "ollama/hf.co/empero-ai/Qwen3.8-9B-Distill-GGUF:Q6_K",
+    "c11": "ollama/hf.co/empero-ai/Qwen3.8-9B-Distill-GGUF:Q6_K",
+    "c12": "ollama/hf.co/empero-ai/Qwen3.8-9B-Distill-GGUF:Q6_K"
+  },
+  "default_thinking_level": "low",
+  "cartridge_thinking_levels": {
+    "c02": "high",
+    "c04": "inherit",
+    "c06": "off"
+  }
+}

@@ -11,6 +11,7 @@ import crypto from 'node:crypto';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import readline from 'node:readline';
+import {executionCatalogue, workerSettings} from './execution_settings.mjs';
 import {syncOllamaModels} from './ollama_models.mjs';
 
 const send = value => process.stdout.write(JSON.stringify(value) + '\n');
@@ -242,7 +243,7 @@ export async function execute(request, onSession = () => {}, shouldAbort = () =>
   // model at all if Magazine required that confinement and it is absent.
   const confinement = sandboxEvidence();
   if (request.requireSandbox && !confinement) throw new Error('Worker sandbox evidence missing; refusing to start inference');
-  const { sdk, version } = await loadSdk(request);
+  const { sdk, version, dir } = await loadSdk(request);
   // The tool domain relies on the SDK prepending shellCommandPrefix to every
   // shell command on its own line; refuse SDKs where that was not verified.
   if (request.shellCommandPrefix && (request.tools || []).includes('bash') && !TOOL_PREFIX_SDKS.has(version))
@@ -253,11 +254,15 @@ export async function execute(request, onSession = () => {}, shouldAbort = () =>
     modelsStorePath:request.modelsStorePath || path.join(request.dataDir,'models-store.json'), allowModelNetwork:false});
   if (runtime.getError()) throw new Error(`Pi model configuration: ${runtime.getError()}`);
   const discovery=await syncOllamaModels(runtime,path.join(request.agentDir,'models.json'));
-  const models = (await runtime.getAvailable()).filter(m => runtime.getPhysicalModel(m.provider, m.id))
-    .filter(m=>m.provider!=='ollama'||discovery.ids===null||discovery.ids.has(m.id));
-  const catalogue = models.map(m=>({id:`${m.provider}/${m.id}`,name:m.name,provider:m.provider}));
-  const selected = models.find(m=>`${m.provider}/${m.id}` === request.model);
+  const models = (await runtime.getAvailable()).map(m => runtime.getPhysicalModel(m.provider, m.id))
+    .filter(m=>m && (m.provider!=='ollama'||discovery.ids===null||discovery.ids.has(m.id)))
+    .filter(m=>Array.isArray(m.input) && m.input.includes('text') &&
+      Number.isSafeInteger(m.contextWindow) && m.contextWindow>0 &&
+      Number.isSafeInteger(m.maxTokens) && m.maxTokens>0);
   const isCatalogue = request.action === 'catalogue';
+  const catalogue = isCatalogue
+    ? await executionCatalogue(models, SettingsManager, request.nativeSettings, version, dir) : [];
+  const selected = models.find(m=>`${m.provider}/${m.id}` === request.model);
   if (!isCatalogue && !selected) throw new Error(`Assigned model unavailable: ${request.model}`);
   if (isCatalogue && !models.length) return {models:[],tools:[],piVersion:version,ollama:discovery.status};
   const requested = isCatalogue ? [] : (request.tools || []);
@@ -266,12 +271,13 @@ export async function execute(request, onSession = () => {}, shouldAbort = () =>
   const extraTools = isCatalogue ? [] : hostTools(request.host, notify);
   const expectedTools = [...requested, ...(request.publish ? [PUBLISHER_TOOL] : []), ...extraTools.map(t => t.name)];
   // Unchanged pi.5 resource policy: no extensions, skills, prompt templates,
-  // themes, context files, compaction, automatic retry or cache warming.
+  // themes, context files, automatic retry or cache warming.
   // When confined, every shell command re-executes itself inside the nested
   // tool domain first (sandbox.py TOOL_PREFIX), away from this process's
   // channel to Magazine and from the attempt's session/publication folders.
+  const execution = workerSettings(selected, request.executionSettings, version);
   const settingsManager = SettingsManager.inMemory({packages:[],extensions:[],skills:[],prompts:[],themes:[],
-    compaction:{enabled:false},retry:{enabled:false,provider:{maxRetries:0}},cacheWarming:{mode:'off'},
+    compaction:execution.compaction,retry:{enabled:false,provider:{maxRetries:0}},cacheWarming:{mode:'off'},
     ...(request.shellCommandPrefix ? {shellCommandPrefix:request.shellCommandPrefix} : {})});
   const resourceLoader = new DefaultResourceLoader({cwd:request.cwd,agentDir:request.agentDir,settingsManager,
     noExtensions:true,noSkills:true,noPromptTemplates:true,noThemes:true,noContextFiles:true,
@@ -288,7 +294,7 @@ export async function execute(request, onSession = () => {}, shouldAbort = () =>
   const {session,modelFallbackMessage} = await createAgentSession({cwd:request.cwd,agentDir:request.agentDir,
     // Catalogue builds an in-memory discovery session only. Execution always
     // uses the exact selected model validated above, with no fallback.
-    modelRuntime:runtime,model:isCatalogue ? models[0] : selected,thinkingLevel:'off',settingsManager,resourceLoader,
+    modelRuntime:runtime,model:isCatalogue ? models[0] : selected,thinkingLevel:execution.thinkingLevel,settingsManager,resourceLoader,
     sessionManager,tools:isCatalogue ? undefined : expectedTools,
     noTools:isCatalogue ? undefined : 'all', ...(customTools.length ? {customTools} : {})});
   onSession(session);
@@ -297,6 +303,8 @@ export async function execute(request, onSession = () => {}, shouldAbort = () =>
     await session.bindExtensions({});
     const tools = session.getAllTools().map(t=>({id:t.name,name:t.label || t.name,description:t.description}));
     if (isCatalogue) return {models:catalogue,tools:tools.filter(t=>t.id!==PUBLISHER_TOOL),piVersion:version,ollama:discovery.status};
+    if (request.executionSettings && session.thinkingLevel !== execution.thinkingLevel)
+      throw new Error('Pi reasoning capabilities changed after preparation; prepare a new run');
     if (expectedTools.some(t=>!tools.some(x=>x.id===t))) throw new Error('Requested tool unavailable');
     session.setActiveToolsByName(expectedTools);
     if (session.getActiveToolNames().sort().join('\0') !== [...expectedTools].sort().join('\0')) throw new Error('Pi tool allowlist differs');
@@ -304,15 +312,23 @@ export async function execute(request, onSession = () => {}, shouldAbort = () =>
     if (shouldAbort()) throw new Error('Worker stopped before inference');
     notify({event:'session',id:sessionManager.getSessionId(),file:sessionManager.getSessionFile(),sdkVersion:version,
       activeTools:session.getActiveToolNames().sort(),sandbox:confinement});
-    let signalled=false;
+    let signalled=false, lastAssistant;
     const unsubscribe=session.subscribe(event=>{
       try {
         if(!signalled&&event.type==='message_update') {signalled=true;notify({event:'streaming'});}
         if(event.type==='message_end'&&event.message?.role==='assistant') {
           const m=event.message;
+          // SDK recovery can remove a truncated response from active context.
+          // Keep its actual terminal event and verify it against the saved chat.
+          lastAssistant=m;
           notify({event:'assistant',stopReason:m.stopReason ?? null,usage:usageOf(m.usage),
             toolCalls:(m.content||[]).filter(c=>c?.type==='toolCall').map(c=>({id:String(c.id),name:String(c.name),
               argsSha256:sha256(canonical(c.arguments ?? null))}))});
+        }
+        if(event.type==='compaction_start' || event.type==='compaction_end') {
+          notify({event:'compaction',phase:event.type==='compaction_start'?'started':event.aborted?'aborted':
+            event.result?'completed':event.errorMessage?'failed':'skipped',reason:event.reason,
+            willRetry:event.willRetry===true});
         }
         if(event.type==='tool_execution_end') {
           notify({event:'tool_result',toolCallId:String(event.toolCallId),toolName:String(event.toolName),
@@ -325,7 +341,7 @@ export async function execute(request, onSession = () => {}, shouldAbort = () =>
     try { await session.prompt(request.prompt,{expandPromptTemplates:false}); } finally { unsubscribe(); }
     if (shouldAbort()) throw new Error('Worker aborted');
     if (session.model.provider !== selected.provider || session.model.id !== selected.id) throw new Error('Worker changed assigned model');
-    const last = session.messages.filter(m=>m.role==='assistant').at(-1);
+    const last = lastAssistant;
     const text = textOf(last);
     const file = sessionManager.getSessionFile();
     if (!file || !fs.existsSync(file)) throw new Error('Saved Pi worker session missing');

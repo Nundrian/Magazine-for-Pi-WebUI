@@ -1,0 +1,15 @@
+schema_version: '1.0'
+name: Pi 10.5 Acceptance Lifecycle
+handover_mode: result_file_v1
+recovery:
+  max_attempts: 2
+  attempt_seconds: 300
+cartridges:
+- id: l01
+  model: acceptance
+  prompt: This is a deliberate acceptance HALT. Finish with the workflow HALT line
+    and name this planned stop. Leave the designated output absent.
+  retry_safe: true
+  artifacts:
+    outputs:
+    - l01.txt

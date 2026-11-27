@@ -1,5 +1,18 @@
 # Changelog — Magazine for Pi WebUI
 
+## 0.1.0-pi.10.5 provisional candidate
+
+- Ollama discovery supplies absent chat metadata and exact model-name fallbacks while preserving configured values.
+- New SDK 1.5.2 runs resolve Pi thinking and compaction at preparation. Schema 1.1 supports independent workflow and cartridge reasoning and reusable export.
+- Stale model-plan responses cannot apply over newer setup. The handover controls explain mandatory modes and the ledger shows the actual automatic-attempt policy.
+- Saved-run workspace trash uses same-filesystem renames under the Magazine-owned workspace and retains a restore journal.
+- SDK terminal response events remain authoritative when native context recovery removes a truncated response from active context; saved-transcript verification is retained.
+- Manage updates run status and deletion eligibility during polling without replacing focused controls or confirmation dialogs.
+- Native compaction start/end events cross the Python dispatch channel and are durably retained in attempt records.
+- Attempt totals include reported native compaction usage once; missing compaction usage stays unavailable and makes totals incomplete.
+- The C acceptance fixture requires six full bounded input reads; header-only reads no longer satisfy its context exercise.
+- Linux regression, native Pi activation and Firefox scripted acceptance are verified. Real-model acceptance remains a separate release gate. See [pi.10.5 corrective notes](docs/PI105-CORRECTIVE.md).
+
 ## 0.1.0-pi.10.4 corrective candidate
 
 - Folder delivery now leaves cleanup to the publication routine once it consumes the staging directory. Exports report success, identical exports are reused, and conflicting destinations keep their contents.

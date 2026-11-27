@@ -207,12 +207,21 @@ def test_failed_or_halted_run_releases_the_slot(env):
 def test_restart_retains_queue_without_unattended_execution(env):
     rpc = env.rpc()
     rpc.call("set_scheduler", {"mode": "round_robin"})
-    a = run_doc(rpc, "A", ["ok", "hold-once", "ok"])
+    # Hold A1 until B's catalogue/admission has completed. Otherwise a fast
+    # synthetic A1 can reach A2 before B is admitted, leaving B legitimately
+    # READY at the restart instead of testing two interrupted core executions.
+    first = env.provider.gate("A1")
+    a = run_doc(rpc, "A", ["gate:A1", "hold-once", "ok"])
     b = run_doc(rpc, "B", ["ok", "gate:B2"])
     gate_b = env.provider.gate("B2")
     rpc.call("start", {"run_id": a})
+    assert env.provider.wait_reached("A1")
     rpc.call("start", {"run_id": b})
+    first.set()
     assert env.provider.holding.wait(30)  # A2 in progress, B waiting after B1
+    for rid, committed in ((a, "A1"), (b, "B1")):
+        status = rpc.call("status", {"run_id": rid})
+        assert status["status"] == "RUNNING" and status["done"] == [committed]
     rpc = env.restart(kill=True)
     time.sleep(0.5)
     env.provider.hold.set()
@@ -227,7 +236,8 @@ def test_restart_retains_queue_without_unattended_execution(env):
     assert len(env.provider.requests) == count  # nothing ran on its own
     # Both were inside the core: Start auto-halts them, recovery returns them to READY.
     for rid in (a, b):
-        assert rpc.call("start", {"run_id": rid}, ok=False)["code"] == 409
+        response = rpc.call("start", {"run_id": rid}, ok=False)
+        assert response.get("code") == 409, response
         rpc.call("recover", {"run_id": rid})
     assert [e["run_id"] for e in rpc.call("scheduler")["queue"]] == [a, b]  # order retained through recovery
     before = len(env.provider.first_prompts())

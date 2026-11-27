@@ -5,6 +5,7 @@ are storage labels, never client-supplied identities. No execution lock is
 acquired by chat readers; every path is derived from retained run records.
 """
 import contextlib
+import errno
 import hashlib
 import json
 import os
@@ -25,6 +26,36 @@ LINE_BYTES = 4 * 1024 * 1024
 CHAT_ID = re.compile(r'[a-f0-9]{64}')
 
 
+def workspace_trash_name(token):
+    return '.magazine-trash-' + token
+
+
+def sync_directory(fd):
+    try:
+        os.fsync(fd)
+    except OSError as error:
+        # Some Windows-backed mounts do not implement directory fsync.
+        if error.errno not in (errno.EINVAL, errno.ENOTSUP):
+            raise
+
+
+def write_trash_record(parent, name, record):
+    temporary = '.trash-record-' + uuid.uuid4().hex
+    fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=parent)
+    try:
+        with os.fdopen(fd, 'w') as stream:
+            json.dump(record, stream)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, name, src_dir_fd=parent, dst_dir_fd=parent)
+    finally:
+        try:
+            os.unlink(temporary, dir_fd=parent)
+        except FileNotFoundError:
+            pass
+    os.fsync(parent)
+
+
 class SupportError(ValueError):
     def __init__(self, message, code=400):
         super().__init__(message)
@@ -36,7 +67,8 @@ def check(ok, message, code=400):
         raise SupportError(message, code)
 
 
-def validate_plan(plan, workflow_name, ordered_ids, available_model_ids):
+def validate_plan(plan, workflow_name, ordered_ids, available_models):
+    from model_selection import select_thinking
     """Validate the whole plan before returning any applicable mapping."""
     try:
         raw = plan if isinstance(plan, str) else json.dumps(plan, allow_nan=False)
@@ -45,14 +77,17 @@ def validate_plan(plan, workflow_name, ordered_ids, available_model_ids):
     except (TypeError, ValueError) as exc:
         raise SupportError('Invalid model plan: ' + str(exc)) from None
     check(isinstance(value, dict), 'Model plan must be an object')
-    check(set(value) <= {'schema_version', 'workflow_name', 'cartridge_ids', 'cartridge_models', 'default_model', 'rationale'}, 'Unknown model-plan field')
-    check(value.get('schema_version') == '1.0', 'Model plan schema_version must be 1.0')
+    version = value.get('schema_version')
+    check(version in ('1.0', '1.1'), 'Model plan schema_version must be 1.0 or 1.1')
+    reasoning = {'default_thinking_level', 'cartridge_thinking_levels'} if version == '1.1' else set()
+    fields = {'schema_version', 'workflow_name', 'cartridge_ids', 'cartridge_models', 'default_model', 'rationale'}
+    check(set(value) <= fields | reasoning, 'Unknown model-plan field')
     check(value.get('workflow_name') == workflow_name, 'Model plan belongs to a different workflow')
     check(value.get('cartridge_ids') == ordered_ids and len(set(ordered_ids)) == len(ordered_ids), 'Model plan cartridge IDs must match the exact ordered workflow')
     mapping = value.get('cartridge_models', {})
     check(isinstance(mapping, dict) and set(mapping) <= set(ordered_ids), 'Unknown cartridge in model plan')
     default = value.get('default_model')
-    available = set(available_model_ids)
+    available = set(available_models)
     if default is not None:
         check(isinstance(default, str) and default in available, 'Default model is unavailable in Pi catalogue')
     resolved = {}
@@ -63,8 +98,14 @@ def validate_plan(plan, workflow_name, ordered_ids, available_model_ids):
     rationale = value.get('rationale', {})
     check(isinstance(rationale, dict) and set(rationale) <= set(ordered_ids)
           and all(isinstance(v, str) and len(v) <= 2000 for v in rationale.values()), 'Invalid model-plan rationale')
-    return {'schema_version': '1.0', 'workflow_name': workflow_name, 'cartridge_ids': list(ordered_ids),
-            'cartridge_models': resolved, 'rationale': rationale}
+    settings = {key: value[key] for key in reasoning if key in value}
+    if settings:
+        try:
+            select_thinking(settings, resolved, available_models if isinstance(available_models, dict) else {})
+        except ValueError as exc:
+            raise SupportError(str(exc)) from exc
+    return {'schema_version': version, 'workflow_name': workflow_name, 'cartridge_ids': list(ordered_ids),
+            'cartridge_models': resolved, 'rationale': rationale, **settings}
 
 
 @contextlib.contextmanager
@@ -377,46 +418,60 @@ class Support:
                 if kind == 'run':
                     workspace = Path(s.config['cwd'])/'magazine-runs'
                     if workspace.exists():
-                        targets.append(('workspace', workspace, identifier))
-                def write_record(name, record):
-                    fd = os.open(name, os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW, 0o600, dir_fd=transaction)
-                    with os.fdopen(fd, 'w') as stream:
-                        json.dump(record, stream)
-                        stream.flush()
-                        os.fsync(stream.fileno())
-                    os.fsync(transaction)
+                        with directory(workspace) as workspace_fd:
+                            try:
+                                info = os.stat(identifier, dir_fd=workspace_fd, follow_symlinks=False)
+                            except FileNotFoundError:
+                                pass
+                            else:
+                                check(stat.S_ISDIR(info.st_mode), 'Managed workspace is not a directory', 409)
+                                targets.append(('workspace', workspace, identifier))
                 record = {'kind': kind, 'id': identifier, 'owner': owner, 'created_at': time.time(),
                           'parts': [label for label, _, _ in targets], 'state': 'interrupted'}
+                # The workspace can be on a Windows bind mount. Retain its data on that
+                # same filesystem, anchored under the existing Magazine-only directory.
+                if kind == 'run' and any(label == 'workspace' for label, _, _ in targets):
+                    record['workspace_location'] = 'local'
+                    record['workspace_inode'] = info.st_ino
                 # The durable intent precedes the first rename. A process death
                 # mid-transaction remains discoverable and restorable on restart.
-                write_record('intent.json', record)
+                write_trash_record(transaction, 'intent.json', record)
                 for label, parent, name in targets:
                     with directory(parent) as pf:
                         try:
                             child = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=pf)
-                        except FileNotFoundError:
-                            if label == 'workspace':
-                                continue
-                            raise
+                        except FileNotFoundError as error:
+                            raise SupportError('Managed directory disappeared during deletion', 409) from error
                         try:
                             before = os.fstat(child)
                             now = os.stat(name, dir_fd=pf, follow_symlinks=False)
                             check((before.st_dev, before.st_ino) == (now.st_dev, now.st_ino), 'Managed directory changed during deletion', 409)
-                            os.rename(name, label, src_dir_fd=pf, dst_dir_fd=transaction)
+                            destination = workspace_trash_name(token) if label == 'workspace' else label
+                            destination_fd = pf if label == 'workspace' else transaction
+                            if label == 'workspace':
+                                check(now.st_ino == record['workspace_inode'], 'Managed workspace changed during deletion', 409)
+                                try:
+                                    os.stat(destination, dir_fd=pf, follow_symlinks=False)
+                                except FileNotFoundError:
+                                    pass
+                                else:
+                                    raise SupportError('Workspace restore point already exists', 409)
+                            os.rename(name, destination, src_dir_fd=pf, dst_dir_fd=destination_fd)
                             moves.append((label, parent, name))
-                            os.fsync(pf)
+                            sync_directory(pf)
                         finally:
                             os.close(child)
                 record.update(parts=[label for label, _, _ in moves], state='complete')
-                write_record('trash.json', record)
+                write_trash_record(transaction, 'trash.json', record)
                 os.unlink('intent.json', dir_fd=transaction)
                 os.fsync(transaction)
         except Exception:
             with directory(trash/token) as transaction:
                 for label, parent, name in reversed(moves):
                     with directory(parent) as pf:
-                        os.rename(label, name, src_dir_fd=transaction, dst_dir_fd=pf)
-                        os.fsync(pf)
+                        retained = workspace_trash_name(token) if label == 'workspace' else label
+                        os.rename(retained, name, src_dir_fd=pf if label == 'workspace' else transaction, dst_dir_fd=pf)
+                        sync_directory(pf)
                 for name in ('trash.json', 'intent.json'):
                     try:
                         os.unlink(name, dir_fd=transaction)
@@ -489,37 +544,67 @@ class Support:
         restored = []
         with directory(base) as tf:
             try:
+                journal = read_json(base, 'restoring.json', 4096)
+            except FileNotFoundError:
+                journal = {}
+                for label, parent, name in targets:
+                    local = label == 'workspace' and record.get('workspace_location') == 'local'
+                    retained_name = workspace_trash_name(token) if local else label
+                    try:
+                        if local:
+                            with directory(parent) as pf:
+                                entry = os.stat(retained_name, dir_fd=pf, follow_symlinks=False)
+                        else:
+                            entry = os.stat(label, dir_fd=tf, follow_symlinks=False)
+                    except FileNotFoundError:
+                        continue
+                    journal[label] = [entry.st_dev, entry.st_ino]
+                write_trash_record(tf, 'restoring.json', journal)
+            try:
                 for label, parent, name in targets:
                     parent.mkdir(parents=True, exist_ok=True, mode=0o700)
                     with directory(parent) as pf:
+                        local = label == 'workspace' and record.get('workspace_location') == 'local'
+                        retained_name = workspace_trash_name(token) if local else label
+                        retained_fd = pf if local else tf
                         try:
-                            retained = os.stat(label, dir_fd=tf, follow_symlinks=False)
+                            retained = os.stat(retained_name, dir_fd=retained_fd, follow_symlinks=False)
                         except FileNotFoundError:
                             # An interrupted deletion may not have moved this
                             # part yet. It must still be safely at its origin.
                             original = os.stat(name, dir_fd=pf, follow_symlinks=False)
-                            check(record.get('state') == 'interrupted' and stat.S_ISDIR(original.st_mode), 'Missing retained trash data', 409)
+                            identity = [original.st_dev, original.st_ino]
+                            check(stat.S_ISDIR(original.st_mode) and
+                                  (journal.get(label) == identity or
+                                   (record.get('state') == 'interrupted' and label not in journal)),
+                                  'Missing retained trash data', 409)
                             continue
-                        check(stat.S_ISDIR(retained.st_mode), 'Unsafe retained trash directory', 409)
+                        check(stat.S_ISDIR(retained.st_mode) and
+                              journal.get(label) == [retained.st_dev, retained.st_ino],
+                              'Unsafe retained trash directory', 409)
+                        if local:
+                            check(retained.st_ino == record.get('workspace_inode'), 'Retained workspace changed', 409)
                         try:
                             os.stat(name, dir_fd=pf, follow_symlinks=False)
                         except FileNotFoundError:
                             pass
                         else:
                             raise SupportError('Restore would overwrite existing saved work', 409)
-                        os.rename(label, name, src_dir_fd=tf, dst_dir_fd=pf)
-                        restored.append((label, parent, name))
-                        os.fsync(pf)
-                for name in ('trash.json', 'intent.json'):
+                        os.rename(retained_name, name, src_dir_fd=retained_fd, dst_dir_fd=pf)
+                        restored.append((label, parent, name, local))
+                        sync_directory(pf)
+                for name in ('trash.json', 'intent.json', 'restoring.json'):
                     try:
                         os.unlink(name, dir_fd=tf)
                     except FileNotFoundError:
                         pass
                 os.fsync(tf)
             except Exception:
-                for label, parent, name in reversed(restored):
+                for label, parent, name, local in reversed(restored):
                     with directory(parent) as pf:
-                        os.rename(name, label, src_dir_fd=pf, dst_dir_fd=tf)
+                        destination = workspace_trash_name(token) if local else label
+                        os.rename(name, destination, src_dir_fd=pf, dst_dir_fd=pf if local else tf)
+                        sync_directory(pf)
                 raise
         try:
             os.rmdir(base)  # the emptied transaction folder is not a restore point

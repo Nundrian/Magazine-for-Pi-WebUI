@@ -43,7 +43,8 @@ def main():
     for directory in ('docs', 'scripts', 'tests'):
         source_files.extend(p for p in public_files(ROOT / directory)
             if p.name not in ('HOST-CONFIGURATION-RESTORATION.md','PERSISTENT-AUTH-INVESTIGATION.md',
-                              'launch_firefox_auth_check.py','live_auth_check.cjs'))
+                              'launch_firefox_auth_check.py','live_auth_check.cjs',
+                              'Nebula-Swamp-Run2-142-Model-Assignments-1.1.json'))
     inventories = {
         f'Magazine-Pi-{version}-plugin.zip': {
             'magazine-pi/' + p.relative_to(plugin).as_posix(): p for p in plugin_files},

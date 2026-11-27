@@ -422,6 +422,33 @@ def test_deleted_run_and_owned_workspace_are_restorable_without_external_changes
     assert not any(i['trash_id']==deleted['trash_id'] for i in call(service,'trash')['items'])
 
 
+def test_halted_run_workspace_never_renamed_between_filesystems(service, monkeypatch):
+    import errno
+
+    rid, base, _ = make_run(service, status='HALTED')
+    workspace = Path(service.config['cwd']) / 'magazine-runs' / rid
+    workspace.mkdir(parents=True)
+    (workspace / 'result.txt').write_text('verified workspace data')
+    before = (workspace / 'result.txt').read_bytes()
+    root_inode = workspace.parent.stat().st_ino
+    original = os.rename
+
+    def rename(source, destination, *, src_dir_fd=None, dst_dir_fd=None):
+        if src_dir_fd is not None and dst_dir_fd is not None:
+            source_is_workspace = os.fstat(src_dir_fd).st_ino == root_inode
+            destination_is_workspace = os.fstat(dst_dir_fd).st_ino == root_inode
+            if source_is_workspace != destination_is_workspace:
+                raise OSError(errno.EXDEV, 'fixture uses separate filesystems')
+        return original(source, destination, src_dir_fd=src_dir_fd, dst_dir_fd=dst_dir_fd)
+
+    monkeypatch.setattr(os, 'rename', rename)
+    receipt = call(service, 'delete_run', run_id=rid, confirmation=rid)
+    assert not base.exists() and not workspace.exists()
+    assert any(item['id'] == rid and item['can_restore'] for item in call(service, 'restore_points')['items'])
+    call(service, 'restore', trash_id=receipt['trash_id'])
+    assert base.exists() and (workspace / 'result.txt').read_bytes() == before
+
+
 def test_restore_refuses_to_overwrite_new_record_with_same_identity(service):
     rid,base,_=make_run(service,status='READY')
     deleted=call(service,'delete_run',run_id=rid,confirmation=rid)

@@ -1,0 +1,135 @@
+schema_version: '1.0'
+name: Pi 10.5 Acceptance A
+handover_mode: result_file_v1
+recovery:
+  max_attempts: 2
+  attempt_seconds: 300
+cartridges:
+- id: a01
+  model: acceptance
+  prompt: Use the write tool to put exactly 'A a01' followed by one newline into a01.txt
+    in the designated output folder. Use the read tool to confirm the content. Publish
+    verified=true, files=["a01.txt"], note="A a01", and the checks you actually performed.
+  retry_safe: true
+  artifacts:
+    outputs:
+    - a01.txt
+- id: a02
+  model: acceptance
+  prompt: Read the verified input file a01.txt and confirm that it contains A a01.
+    Use the write tool to put exactly 'A a02' followed by one newline into a02.txt
+    in the designated output folder. Use the read tool to confirm the content. Publish
+    verified=true, files=["a02.txt"], note="A a02", and the checks you actually performed.
+  retry_safe: true
+  artifacts:
+    outputs:
+    - a02.txt
+    inputs:
+    - from: a01
+      path: a01.txt
+  handover:
+  - from: a01
+    select: /result
+    as: previous_result
+- id: a03
+  model: acceptance
+  prompt: Read the verified input file a02.txt and confirm that it contains A a02.
+    Use the write tool to put exactly 'A a03' followed by one newline into a03.txt
+    in the designated output folder. Use the read tool to confirm the content. Publish
+    verified=true, files=["a03.txt"], note="A a03", and the checks you actually performed.
+  retry_safe: true
+  artifacts:
+    outputs:
+    - a03.txt
+    inputs:
+    - from: a02
+      path: a02.txt
+  handover:
+  - from: a02
+    select: /result
+    as: previous_result
+- id: a04
+  model: acceptance
+  prompt: Read the verified input file a03.txt and confirm that it contains A a03.
+    Use the write tool to put exactly 'A a04' followed by one newline into a04.txt
+    in the designated output folder. Use the read tool to confirm the content. Publish
+    verified=true, files=["a04.txt"], note="A a04", and the checks you actually performed.
+  retry_safe: true
+  artifacts:
+    outputs:
+    - a04.txt
+    inputs:
+    - from: a03
+      path: a03.txt
+  handover:
+  - from: a03
+    select: /result
+    as: previous_result
+- id: a05
+  model: acceptance
+  prompt: Read the verified input file a04.txt and confirm that it contains A a04.
+    Use the write tool to put exactly 'A a05' followed by one newline into a05.txt
+    in the designated output folder. Use the read tool to confirm the content. Publish
+    verified=true, files=["a05.txt"], note="A a05", and the checks you actually performed.
+  retry_safe: true
+  artifacts:
+    outputs:
+    - a05.txt
+    inputs:
+    - from: a04
+      path: a04.txt
+  handover:
+  - from: a04
+    select: /result
+    as: previous_result
+- id: a06
+  model: acceptance
+  prompt: Read the verified input file a05.txt and confirm that it contains A a05.
+    Use the write tool to put exactly 'A a06' followed by one newline into a06.txt
+    in the designated output folder. Use the read tool to confirm the content. Publish
+    verified=true, files=["a06.txt"], note="A a06", and the checks you actually performed.
+  retry_safe: true
+  artifacts:
+    outputs:
+    - a06.txt
+    inputs:
+    - from: a05
+      path: a05.txt
+  handover:
+  - from: a05
+    select: /result
+    as: previous_result
+- id: a07
+  model: acceptance
+  prompt: Read the verified input file a06.txt and confirm that it contains A a06.
+    Use the write tool to put exactly 'A a07' followed by one newline into a07.txt
+    in the designated output folder. Use the read tool to confirm the content. Publish
+    verified=true, files=["a07.txt"], note="A a07", and the checks you actually performed.
+  retry_safe: true
+  artifacts:
+    outputs:
+    - a07.txt
+    inputs:
+    - from: a06
+      path: a06.txt
+  handover:
+  - from: a06
+    select: /result
+    as: previous_result
+- id: a08
+  model: acceptance
+  prompt: Read the verified input file a07.txt and confirm that it contains A a07.
+    Use the write tool to put exactly 'A a08' followed by one newline into a08.txt
+    in the designated output folder. Use the read tool to confirm the content. Publish
+    verified=true, files=["a08.txt"], note="A a08", and the checks you actually performed.
+  retry_safe: true
+  artifacts:
+    outputs:
+    - a08.txt
+    inputs:
+    - from: a07
+      path: a07.txt
+  handover:
+  - from: a07
+    select: /result
+    as: previous_result

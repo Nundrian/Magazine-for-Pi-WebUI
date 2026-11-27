@@ -338,7 +338,23 @@ class PiDispatch:
             shutil.rmtree(scratch, ignore_errors=True)  # fd-based; never follows links
 
     async def catalogue(self):
-        return await self._request({'action': 'catalogue'})
+        path = Path(self.config['agentDir']) / 'settings.json'
+        try:
+            with path.open(encoding='utf-8-sig') as settings:
+                native = json.load(settings)
+            if not isinstance(native, dict):
+                raise ValueError('Pi settings must be an object')
+        except FileNotFoundError:
+            native = {}
+        except (OSError, ValueError) as error:
+            raise ValueError('Pi execution settings could not be read') from error
+
+        allowed = {key: native[key] for key in ('defaultThinkingLevel', 'modelThinkingLevels') if key in native}
+        compaction = native.get('compaction')
+        if isinstance(compaction, dict):
+            allowed['compaction'] = {key: compaction[key] for key in ('enabled', 'reserveTokens',
+                                     'keepRecentTokens', 'modelOverrides') if key in compaction}
+        return await self._request({'action': 'catalogue', 'nativeSettings': allowed})
 
     async def __call__(self, prompt, model_id):
         """pi.5 contract: exact prompt, exact model, final text only."""
@@ -349,7 +365,7 @@ class PiDispatch:
             raise ValueError('Pi worker has no final text')
         return result['text']
 
-    async def run(self, prompt, model_id, *, publish=None, timeout=None, on_event=None, session_dir=None, host=None):
+    async def run(self, prompt, model_id, *, publish=None, timeout=None, on_event=None, session_dir=None, host=None, execution_settings=None):
         """One fresh saved session. Returns the worker's structured outcome.
 
         ``host`` (pi.10, optional): trusted handler for the worker's host-tool and checkpoint calls. Only its
@@ -373,6 +389,8 @@ class PiDispatch:
             writable.append(Path(publish['resultPath']).parent)
         if host is not None:
             request['host'] = host.worker_request()
+        if execution_settings is not None:
+            request['executionSettings'] = execution_settings
         result = await self._request(request, timeout, writable)
         if self.cancel_confirmed:
             raise asyncio.CancelledError('Pi worker abort requested')
@@ -485,7 +503,7 @@ class PiDispatch:
                 atomic_write(str(Path(self.session_root).parent/'active-worker.json'),
                     json.dumps({'session_id':self.active_chat_id,'phase':'streaming'}).encode())
                 self._emit(event)
-            elif kind in ('assistant', 'tool_result', 'published'):
+            elif kind in ('assistant', 'tool_result', 'published', 'compaction'):
                 self._emit(event)
             elif kind == 'host_call':
                 task = asyncio.create_task(self._answer_host(event))

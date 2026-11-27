@@ -78,6 +78,8 @@ class Stopped(Exception):
 
 
 def classify_worker_error(message):
+    if message.startswith(('Pi model metadata changed after preparation', 'Pi reasoning capabilities changed after preparation')):
+        return ho.ResultFailure("EXECUTION_SETTINGS_CHANGED", message, "hard")
     if any(message.startswith(prefix) for prefix in HARD_WORKER_ERRORS):
         return ho.ResultFailure("WORKER_INTEGRITY", message, "hard")
     return classify_model_error(message) or ho.ResultFailure("WORKER_FAILED", message, "repair")
@@ -363,6 +365,9 @@ class CartridgeExecutor:
                        "phase": "working", "started": lg.now_iso(), "session_id": None,
                        "kind": (context or {}).get("kind", "work"), "protocol": self.mode,
                        "tokens": tokens.unavailable("not_started")}
+            execution = self.meta.get("execution_settings", {}).get(cid)
+            if execution is not None:
+                attempt["execution_settings"] = execution
             if context:
                 attempt["failure_context"] = context
             record["attempts"].append(attempt)
@@ -416,7 +421,7 @@ class CartridgeExecutor:
         record["status"] = attempt["status"]
         level = "info" if attempt["status"] == "done" else "warn"
         lg.note(self.ledger, f"{cid} attempt {attempt['attempt_number']}: {attempt['status']}"
-                + (f" ({attempt['code']})" if attempt.get("code") else "") + f" — {decision['reason']}", cid, level)
+                + (f" ({attempt['code']})" if attempt.get("code") else "") + f" â€” {decision['reason']}", cid, level)
         self.save()
         return decision
 
@@ -431,6 +436,10 @@ class CartridgeExecutor:
                 attempt["sdk_version"] = event.get("sdkVersion")
                 attempt["active_tools"] = event.get("activeTools")
                 attempt["sandbox"] = event.get("sandbox")
+                changed = True
+            elif kind == "compaction":
+                attempt.setdefault("compaction_events", []).append(
+                    {key: event.get(key) for key in ("phase", "reason", "willRetry")})
                 changed = True
             elif kind == "assistant":
                 self._usage.append(event.get("usage"))
@@ -513,7 +522,8 @@ class CartridgeExecutor:
                 result = await self.dispatch.run(delivered, model_id, publish=publish, timeout=seconds,
                                                  on_event=self.on_event(attempt, police),
                                                  session_dir=self.run_base / "sessions" / attempt["attempt_id"],
-                                                 host=host)
+                                                 host=host, **({"execution_settings": attempt["execution_settings"]}
+                                                     if "execution_settings" in attempt else {}))
             except BaseException as exc:
                 tampered = self.verify_controller(seal, attempt)
                 if tampered is not None and not isinstance(exc, asyncio.CancelledError):

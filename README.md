@@ -75,7 +75,7 @@ Review the deliverables and use real task-specific tests.
 
 ## Development status — 26 November 2026
 
-Current source: **0.1.0-pi.10.4 corrective candidate**. This supersedes pi.8-ui.5 and incorporates the pi.9 reliability work, pi.10 host tools and checkpoint support, pi.10.3 transactional completion corrections, and pi.10.4 folder-export cleanup fix. See [CHANGELOG.md](CHANGELOG.md) and [pi.10.3 corrective notes](docs/PI103-CORRECTIVE.md).
+Current source: **0.1.0-pi.10.5 provisional candidate**. This supersedes pi.8-ui.5 and incorporates the pi.9 reliability work, pi.10 host tools and checkpoint support, pi.10.3 transactional completion corrections, and pi.10.4 folder-export cleanup fix. See [CHANGELOG.md](CHANGELOG.md) and [pi.10.3 corrective notes](docs/PI103-CORRECTIVE.md).
 
 The owner-supplied delivery has matching source and plugin checksums. The pi.10.4 change report records 52 focused tests passed and 17 skipped, plus Windows control-flow publication probes. The publisher review additionally ran 28 focused tests with one skip. These are not full live-model acceptance results. The supplied report notes that actual Windows-backed mounts and native Linux descriptor operations were not verified in its environment.
 
@@ -83,7 +83,7 @@ The owner-supplied delivery has matching source and plugin checksums. The pi.10.
 
 ## Install and compatibility
 
-Current source version: **0.1.0-pi.10.4**: kernel-enforced worker isolation,
+Current source version: **0.1.0-pi.10.5**: kernel-enforced worker isolation,
 controller-integrity checks, dependable Stop and state repair, restore-point
 management, automatic Ollama model discovery and guarded interrupted-run
 reconciliation. See the [changelog](CHANGELOG.md). The tested Docker Desktop deployment uses
